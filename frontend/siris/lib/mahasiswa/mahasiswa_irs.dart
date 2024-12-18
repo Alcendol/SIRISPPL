@@ -243,15 +243,15 @@ Widget build(BuildContext context) {
                         ],
                         rows: jadwalIRS.map((jadwal) {
                           return DataRow(cells: [
-                            DataCell(Text('${jadwal.KodeMK ?? 'N/A'} - ${jadwal.NamaMK ?? 'N/A'}')),
-                            DataCell(Text(jadwal.Ruangan ?? 'N/A')),
-                            DataCell(Text(jadwal.Hari ?? 'N/A')),
-                            DataCell(Text(jadwal.JamMulai ?? 'N/A')),
-                            DataCell(Text(jadwal.JamSelesai ?? 'N/A')),
-                            DataCell(Text(jadwal.Kelas ?? 'N/A')),
-                            DataCell(Text(jadwal.SKS?.toString() ?? '0')), // Pastikan untuk menangani null pada SKS
-                            DataCell(Text(jadwal.status ?? 'N/A')),
-                            DataCell(Text(jadwal.DosenPengampu?.join(", ") ?? 'N/A')),
+                            DataCell(Text('${jadwal.KodeMK} - ${jadwal.NamaMK}')),
+                            DataCell(Text(jadwal.Ruangan)),
+                            DataCell(Text(jadwal.Hari)),
+                            DataCell(Text(jadwal.JamMulai)),
+                            DataCell(Text(jadwal.JamSelesai)),
+                            DataCell(Text(jadwal.Kelas)),
+                            DataCell(Text(jadwal.SKS.toString())), // Pastikan untuk menangani null pada SKS
+                            DataCell(Text(jadwal.status)),
+                            DataCell(Text(jadwal.DosenPengampu.join(", "))),
                           ]);
                         }).toList(),
                       ),

@@ -75,8 +75,6 @@ class DaftarMahasiswaPerwalianPageState
   }
 
   Future<void> fetchMahasiswaPerwalian() async {
-    if (selectedAngkatan == null) return;
-
     setState(() {
       isLoading = true;
     });
