@@ -1,0 +1,1487 @@
+diff --git a/backend/controller/JadwalController.go b/backend/controller/JadwalController.go
+index 8a0dd88..d3d0669 100644
+--- a/backend/controller/JadwalController.go
++++ b/backend/controller/JadwalController.go
+@@ -588,7 +588,8 @@ GROUP BY
+ 		// Tambahkan j.jadwal_id di sini
+ 		if err := rows.Scan(&jadwal.JadwalID, &jadwal.KodeMK, &jadwal.NamaMK, &jadwal.Ruangan,
+ 			&jadwal.Hari, &jadwal.JamMulai, &jadwal.JamSelesai, &jadwal.Kelas,
+-			&jadwal.SKS, &dosenPengampuString, &status); err != nil {
++			&jadwal.SKS, &dosenPengampuString, &status); 
++		err != nil {
+ 			fmt.Println("Scan error:", err)
+ 			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal membaca data jadwal"})
+ 		}
+@@ -609,3 +610,171 @@ GROUP BY
+ 
+ 	return c.JSON(http.StatusOK, jadwalList)
+ }
++
++
++// Dekan Related
++func GetAllJadwalProdi(c echo.Context) error {
++	idSem := c.Param("idsem")
++	query := `
++	SELECT 
++		jp.id_jadwal_prodi, jp.nama_prodi, jp.idsem, jp.status
++	FROM 
++		jadwal_prodi jp
++	WHERE
++		jp.idsem = ?;
++	`
++	connection := db.CreateCon()
++	rows, err := connection.Query(query, idSem)
++	if err != nil {
++		fmt.Println("Query error:", err)
++		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal mengambil data jadwal"})
++	}
++	defer rows.Close()
++
++	groupedJadwals := make(map[string][]models.JadwalProdiResponse)
++
++	for rows.Next() {
++		var jadwal models.JadwalProdiResponse
++		if err := rows.Scan(
++			&jadwal.JadwalIDProdi, &jadwal.NamaProdi, &jadwal.IdSem, &jadwal.Status); 
++		err != nil {
++			fmt.Println("Scan error:", err)
++			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal membaca data jadwal"})
++		}
++
++		// Tambahkan ke map berdasarkan nama_prodi
++		groupedJadwals[jadwal.NamaProdi] = append(groupedJadwals[jadwal.NamaProdi], jadwal)
++	}
++	return c.JSON(http.StatusOK, groupedJadwals)
++}
++
++func ApproveJadwal(c echo.Context) error {
++	idJadwal := c.Param("idjadwal") // Ambil parameter idjadwal dari URL
++
++	if idJadwal == "" {
++		log.Println("Error: Parameter idjadwal tidak ditemukan")
++		return c.JSON(http.StatusBadRequest, map[string]string{
++			"message": "Parameter idjadwal tidak valid",
++		})
++	}
++
++	query := `
++		UPDATE jadwal_prodi
++		SET status = 'sudah disetujui'
++		WHERE id_jadwal_prodi = ?
++	`
++
++	connection := db.CreateCon()
++
++	// Memulai transaksi database
++	tx, err := connection.Begin()
++	if err != nil {
++		log.Println("Error: Gagal memulai transaksi:", err)
++		return c.JSON(http.StatusInternalServerError, map[string]string{
++			"message": "Gagal memulai transaksi",
++		})
++	}
++	defer tx.Rollback()
++
++	log.Printf("Menyetujui jadwal dengan ID: %s\n", idJadwal)
++
++	// Eksekusi query
++	result, err := tx.Exec(query, idJadwal)
++	if err != nil {
++		log.Println("Error: Gagal memperbarui status jadwal:", err)
++		return c.JSON(http.StatusInternalServerError, map[string]string{
++			"message": "Gagal memperbarui status jadwal",
++		})
++	}
++
++	// Memastikan baris diupdate
++	rowsAffected, err := result.RowsAffected()
++	if err != nil {
++		log.Println("Error: Gagal mendapatkan jumlah baris yang diperbarui:", err)
++		return c.JSON(http.StatusInternalServerError, map[string]string{
++			"message": "Gagal memeriksa status update",
++		})
++	}
++	if rowsAffected == 0 {
++		log.Println("Warning: Tidak ada jadwal yang ditemukan dengan ID:", idJadwal)
++		return c.JSON(http.StatusNotFound, map[string]string{
++			"message": "Jadwal tidak ditemukan",
++		})
++	}
++
++	// Commit transaksi
++	if err := tx.Commit(); err != nil {
++		log.Println("Error: Gagal melakukan commit transaksi:", err)
++		return c.JSON(http.StatusInternalServerError, map[string]string{
++			"message": "Gagal menyetujui jadwal",
++		})
++	}
++
++	log.Printf("Jadwal dengan ID %s berhasil disetujui\n", idJadwal)
++	return c.JSON(http.StatusOK, map[string]string{
++		"message": "Jadwal berhasil disetujui",
++	})
++}
++
++
++func GetDetailJadwal(c echo.Context) error {
++	idJadwal := c.Param("idjadwal")
++
++	query := `
++		SELECT
++			j.jadwal_id,
++			j.kode_mk,
++			mk.nama_mk,
++			j.kode_ruangan,
++			j.hari,
++			j.jam_mulai,
++			j.jam_selesai,
++			j.kelas,
++			GROUP_CONCAT(DISTINCT d.nama SEPARATOR ', ') AS dosen_pengampu,
++			mk.sks
++		FROM 
++			jadwal_prodi jp
++		INNER JOIN jadwal j 
++			ON jp.idsem = j.idsem AND jp.nama_prodi = j.nama_prodi
++		INNER JOIN mata_kuliah mk 
++			ON j.kode_mk = mk.kode_mk
++		LEFT JOIN 
++    		dosenpengampu dp ON dp.kode_mk = j.kode_mk AND dp.idsem = j.idsem
++		LEFT JOIN dosen d 
++			ON dp.nip = d.nip
++		WHERE 
++			jp.id_jadwal_prodi = ?
++		GROUP BY
++			j.jadwal_id, mk.nama_mk, j.kode_ruangan, j.hari, j.jam_mulai, j.jam_selesai, mk.sks;
++
++	`
++	connection := db.CreateCon()
++	rows, err := connection.Query(query, idJadwal)
++	if err != nil {
++		fmt.Println("Query error:", err)
++		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal mengambil data jadwal"})
++	}
++	defer rows.Close()
++
++	groupedJadwals := make(map[string][]models.Jadwal)
++
++	for rows.Next() {
++		var jadwal models.Jadwal
++		var dosenPengampuString string
++
++		if err := rows.Scan(
++			&jadwal.JadwalID, &jadwal.KodeMK, &jadwal.NamaMK, &jadwal.KodeRuangan, 
++			&jadwal.Hari, &jadwal.JamMulai, &jadwal.JamSelesai, &jadwal.Kelas,
++			&dosenPengampuString, &jadwal.SKS, 
++		); err != nil {
++			fmt.Println("Scan error:", err)
++			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal membaca data jadwal"})
++		}
++		jadwal.DosenPengampu = strings.Split(dosenPengampuString, ", ")
++
++		// Tambahkan ke map berdasarkan nama_prodi
++		groupedJadwals[jadwal.JadwalID] = append(groupedJadwals[jadwal.JadwalID], jadwal)
++	}
++	return c.JSON(http.StatusOK, groupedJadwals)
++}
++
+diff --git a/backend/controller/auth.go b/backend/controller/auth.go
+index f23676c..fe65d70 100644
+--- a/backend/controller/auth.go
++++ b/backend/controller/auth.go
+@@ -253,6 +253,18 @@ func Login(c echo.Context) error {
+ 		}
+ 		userResponse.Role = "Dosen"
+ 		log.Println("Dosen data fetched successfully")
++
++	case "Dekan":
++		log.Println("Fetching data for Dekan role...")
++		err = connection.QueryRow("SELECT d.nip, d.nama FROM dosen d JOIN user u ON d.user_id = u.user_id WHERE u.email = ?", req.Email).
++			Scan(&userResponse.Identifier, &userResponse.Name)
++		if err != nil {
++			log.Println("Error fetching Dekan data:", err) // Debugging error saat query dosen
++			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Internal server error"})
++		}
++		userResponse.Role = "Dekan"
++		log.Println("Dekan data fetched successfully")
++
+ 	case "Bagian Akademik":
+ 		log.Println(("Fetching data for Bagian Akademik Role"))
+ 		err = connection.QueryRow("SELECT b.nip, b.nama from bagian_akademik b JOIN user u on b.user_id = u.user_id WHERE u.email = ?", req.Email).
+@@ -263,6 +275,7 @@ func Login(c echo.Context) error {
+ 		}
+ 		userResponse.Role = "Bagian Akademik"
+ 		log.Println("Bagian Akademik data fetched successfully")
++		
+ 	default:
+ 		log.Println("Invalid role for user:", req.Email) // Debugging jika role tidak ditemukan
+ 		return c.JSON(http.StatusUnauthorized, map[string]string{"message": "User role not found"})
+diff --git a/backend/controller/ruangController.go b/backend/controller/ruangController.go
+index 7a76e52..f7b89f5 100644
+--- a/backend/controller/ruangController.go
++++ b/backend/controller/ruangController.go
+@@ -292,3 +292,156 @@ func DeleteMultipleRuang(c echo.Context) error {
+ 		"message": "Selected rooms deleted successfully",
+ 	})
+ }
++
++// Dekan Related
++func GetAllRuangProdi(c echo.Context) error {
++	idSem := c.Param("idsem")
++	query := `
++	SELECT 
++		ar.id_alokasi, ar.nama_prodi, ar.idsem, ar.status
++	FROM 
++		alokasi_ruang ar
++	WHERE
++		ar.idsem = ?;
++	`
++	connection := db.CreateCon()
++	rows, err := connection.Query(query, idSem)
++	if err != nil {
++		fmt.Println("Query error:", err)
++		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal mengambil data ruang"})
++	}
++	defer rows.Close()
++
++	groupedRuangs := make(map[string][]models.AlokasiRuang)
++
++	for rows.Next() {
++		var ruang models.AlokasiRuang
++		if err := rows.Scan(
++			&ruang.IdAlokasi, &ruang.NamaProdi, &ruang.IdSem, &ruang.Status); 
++		err != nil {
++			fmt.Println("Scan error:", err)
++			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal membaca data ruang"})
++		}
++
++		// Tambahkan ke map berdasarkan nama_prodi
++		groupedRuangs[ruang.NamaProdi] = append(groupedRuangs[ruang.NamaProdi], ruang)
++	}
++	return c.JSON(http.StatusOK, groupedRuangs)
++}
++
++func ApproveRuang(c echo.Context) error {
++	idAlokasi := c.Param("idalokasi") // Ambil parameter idjadwal dari URL
++
++	if idAlokasi == "" {
++		log.Println("Error: Parameter idAlokasi tidak ditemukan")
++		return c.JSON(http.StatusBadRequest, map[string]string{
++			"message": "Parameter idAlokasi tidak valid",
++		})
++	}
++
++	query := `
++		UPDATE alokasi_ruang
++		SET status = 'sudah disetujui'
++		WHERE id_alokasi = ?
++	`
++
++	connection := db.CreateCon()
++
++	// Memulai transaksi database
++	tx, err := connection.Begin()
++	if err != nil {
++		log.Println("Error: Gagal memulai transaksi:", err)
++		return c.JSON(http.StatusInternalServerError, map[string]string{
++			"message": "Gagal memulai transaksi",
++		})
++	}
++	defer tx.Rollback()
++
++	log.Printf("Menyetujui ruang dengan ID: %s\n", idAlokasi)
++
++	// Eksekusi query
++	result, err := tx.Exec(query, idAlokasi)
++	if err != nil {
++		log.Println("Error: Gagal memperbarui status ruang:", err)
++		return c.JSON(http.StatusInternalServerError, map[string]string{
++			"message": "Gagal memperbarui status ruang",
++		})
++	}
++
++	// Memastikan baris diupdate
++	rowsAffected, err := result.RowsAffected()
++	if err != nil {
++		log.Println("Error: Gagal mendapatkan jumlah baris yang diperbarui:", err)
++		return c.JSON(http.StatusInternalServerError, map[string]string{
++			"message": "Gagal memeriksa status update",
++		})
++	}
++	if rowsAffected == 0 {
++		log.Println("Warning: Tidak ada ruang yang ditemukan dengan ID:", idAlokasi)
++		return c.JSON(http.StatusNotFound, map[string]string{
++			"message": "Ruang tidak ditemukan",
++		})
++	}
++
++	// Commit transaksi
++	if err := tx.Commit(); err != nil {
++		log.Println("Error: Gagal melakukan commit transaksi:", err)
++		return c.JSON(http.StatusInternalServerError, map[string]string{
++			"message": "Gagal menyetujui ruang",
++		})
++	}
++
++	log.Printf("Ruang dengan ID %s berhasil disetujui\n", idAlokasi)
++	return c.JSON(http.StatusOK, map[string]string{
++		"message": "Ruang berhasil disetujui",
++	})
++}
++
++func GetDetailRuang(c echo.Context) error {
++	idAlokasi := c.Param("idalokasi")
++
++	query := `
++		SELECT
++			r.kode_ruang,
++			r.nama_ruang,
++			r.gedung,
++			r.lantai,
++			r.fungsi,
++			r.kapasitas
++		FROM 
++			alokasi_ruang_detail ard
++		INNER JOIN ruang r
++			ON r.kode_ruang = ard.kode_ruang	
++		WHERE 
++			ard.id_alokasi = ?
++	
++	`
++	connection := db.CreateCon()
++	rows, err := connection.Query(query, idAlokasi)
++	if err != nil {
++        fmt.Printf("Query error (ID Alokasi: %s): %v\n", idAlokasi, err)
++		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal mengambil data ruang"})
++	}
++	defer rows.Close()
++
++	groupedRuangs := make(map[string][]models.Ruang)
++
++	for rows.Next() {
++		var ruang models.Ruang
++	
++		if err := rows.Scan(
++			&ruang.KodeRuang, &ruang.NamaRuang, &ruang.Gedung, &ruang.Lantai, 
++			&ruang.Fungsi, &ruang.Kapasitas,
++		); err != nil {
++			fmt.Println("Scan error:", err)
++			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal membaca data ruang"})
++		}
++	
++		// Tambahkan ke slice
++		fmt.Println("Grouped Ruangs: ", groupedRuangs)
++		groupedRuangs[ruang.KodeRuang] = append(groupedRuangs[ruang.KodeRuang], ruang)
++	}
++	return c.JSON(http.StatusOK, groupedRuangs)
++}
++
++
+diff --git a/backend/main.go b/backend/main.go
+index 722f9b0..47377d7 100644
+--- a/backend/main.go
++++ b/backend/main.go
+@@ -47,6 +47,18 @@ func main() {
+ 
+ 	e.POST("/add-ruang-alokasi/:idAlokasi", controller.AddRuangToAlokasi)
+ 
++	// Route Dekan
++		// Jadwal Related
++	e.GET("/dekan/jadwal/:idsem", controller.GetAllJadwalProdi)
++	e.PUT("/dekan/jadwal/approve/:idjadwal", controller.ApproveJadwal)
++	e.GET("/dekan/jadwal/detail/:idjadwal", controller.GetDetailJadwal)
++
++		// Ruang Related
++	e.GET("/dekan/ruang/:idsem", controller.GetAllRuangProdi)
++	e.PUT("/dekan/ruang/approve/:idalokasi", controller.ApproveRuang)
++	e.GET("/dekan/ruang/detail/:idalokasi", controller.GetDetailRuang)
++	
++
+ 	// Middleware untuk menangani CORS
+ 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+ 		AllowOrigins: []string{"http://localhost:8081"}, // ganti port sesuai yang digunakan Flutter
+diff --git a/backend/models/jadwal.go b/backend/models/jadwal.go
+index 1f64dc0..f20a9d5 100644
+--- a/backend/models/jadwal.go
++++ b/backend/models/jadwal.go
+@@ -1,14 +1,14 @@
+ package models
+ 
+-import "time"
+-
+-// Tabel Jadwal
+ type Jadwal struct {
+-	JadwalID    int       `json:"jadwal_id" db:"jadwal_id"`
+-	KodeMK      string    `json:"kode_mk" db:"kode_mk"`
+-	NipPengajar string    `json:"nip_pengajar" db:"nip_pengajar"`
+-	KodeRuangan string    `json:"kode_ruangan" db:"kode_ruangan"`
+-	Hari        string    `json:"hari" db:"hari"` // ENUM: "Senin", "Selasa", "Rabu", "Kamis", "Jumat"
+-	JamMulai    time.Time `json:"jam_mulai" db:"jam_mulai"`
+-	JamSelesai  time.Time `json:"jam_selesai" db:"jam_selesai"`
+-}
++	JadwalID    	string `json:"id_jadwal"`
++	KodeMK			string `json:"kode_mk"`
++	NamaMK      	string `json:"nama_mk"`
++	KodeRuangan 	string `json:"kode_ruangan"`
++	Hari        	string `json:"hari"`
++	JamMulai    	string `json:"jam_mulai"`
++	JamSelesai  	string `json:"jam_selesai"`
++	DosenPengampu []string `json:"dosen_pengampu"`
++	Kelas			string `json:"kelas"`
++	SKS         	int    `json:"sks"`
++}
+\ No newline at end of file
+diff --git a/backend/models/ruang.go b/backend/models/ruang.go
+index 86c1f38..25ff03a 100644
+--- a/backend/models/ruang.go
++++ b/backend/models/ruang.go
+@@ -1,7 +1,10 @@
+ package models
+ 
+-// Tabel Ruangan
+-type Ruangan struct {
+-	KodeRuangan string `json:"kode_ruangan" db:"kode_ruangan"`
+-	Kapasitas   int    `json:"kapasitas" db:"kapasitas"`
++type Ruang struct {
++	KodeRuang string `json:"kode_ruang" db:"kode_ruang"`
++	NamaRuang string `json:"nama_ruang" db:"nama_ruang"` // Name of the room
++	Gedung    string `json:"gedung" db:"gedung"`         // Building where the room is located
++	Lantai    int    `json:"lantai" db:"lantai"`         // Floor number
++	Fungsi    string `json:"fungsi" db:"fungsi"`         // Function/purpose of the room
++	Kapasitas *int   `json:"kapasitas" db:"kapasitas"`   // Room capacity, optional (nullable)
+ }
+diff --git a/backend/models/ruangv2.go b/backend/models/ruangv2.go
+deleted file mode 100644
+index 25ff03a..0000000
+--- a/backend/models/ruangv2.go
++++ /dev/null
+@@ -1,10 +0,0 @@
+-package models
+-
+-type Ruang struct {
+-	KodeRuang string `json:"kode_ruang" db:"kode_ruang"`
+-	NamaRuang string `json:"nama_ruang" db:"nama_ruang"` // Name of the room
+-	Gedung    string `json:"gedung" db:"gedung"`         // Building where the room is located
+-	Lantai    int    `json:"lantai" db:"lantai"`         // Floor number
+-	Fungsi    string `json:"fungsi" db:"fungsi"`         // Function/purpose of the room
+-	Kapasitas *int   `json:"kapasitas" db:"kapasitas"`   // Room capacity, optional (nullable)
+-}
+diff --git a/frontend/siris/lib/BA/BA_alokasi_page.dart b/frontend/siris/lib/BA/BA_alokasi_page.dart
+index 549d1c4..d4c8187 100644
+--- a/frontend/siris/lib/BA/BA_alokasi_page.dart
++++ b/frontend/siris/lib/BA/BA_alokasi_page.dart
+@@ -2,40 +2,9 @@ import 'dart:convert';
+ // import 'dart:ffi';
+ import 'package:flutter/material.dart';
+ import 'package:http/http.dart' as http;
+-import 'package:siris/BA/BA_list_alokasi_page.dart';
+-
+-class Ruang {
+-  final String kodeRuang;
+-  final String namaRuang;
+-  final String gedung;
+-  final int lantai;
+-  final String fungsi;
+-  final int kapasitas;
+-
+-  Ruang({
+-    required this.kodeRuang,
+-    required this.namaRuang,
+-    required this.gedung,
+-    required this.lantai,
+-    required this.fungsi,
+-    required this.kapasitas,
+-  });
+-
+-  factory Ruang.fromJson(Map<String, dynamic> json) {
+-    return Ruang(
+-      kodeRuang: json['kode_ruang'],
+-      namaRuang: json['nama_ruang'],
+-      gedung: json['gedung'],
+-      lantai: json['lantai'],
+-      fungsi: json['fungsi'],
+-      kapasitas: json['kapasitas'],
+-    );
+-  }
+-}
++import 'package:siris/class/indexClass.dart';
+ 
+ class AlokasiPage extends StatefulWidget {
+-
+-
+     final AlokasiRuang alokasi;
+ 
+   AlokasiPage({required this.alokasi});
+diff --git a/frontend/siris/lib/BA/BA_list_alokasi_page.dart b/frontend/siris/lib/BA/BA_list_alokasi_page.dart
+index 18b7159..f821f0d 100644
+--- a/frontend/siris/lib/BA/BA_list_alokasi_page.dart
++++ b/frontend/siris/lib/BA/BA_list_alokasi_page.dart
+@@ -3,31 +3,7 @@ import 'dart:convert';
+ import 'package:flutter/material.dart';
+ import 'package:http/http.dart' as http;
+ import 'package:siris/BA/BA_alokasi_page.dart';
+-
+-class AlokasiRuang {
+-  final String idAlokasi;
+-  final String idSem;
+-  final String namaProdi;
+-  final String status;
+-
+-
+-  AlokasiRuang({
+-    required this.idAlokasi,
+-    required this.idSem,
+-    required this.namaProdi,
+-    required this.status,
+-  });
+-
+-  factory AlokasiRuang.fromJson(Map<String, dynamic> json) {
+-    return AlokasiRuang(
+-      idAlokasi: json['id_alokasi'],
+-      idSem: json['idsem'],
+-      namaProdi: json['nama_prodi'],
+-      status: json['status'],
+-    );
+-  }
+-}
+-
++import 'package:siris/class/indexClass.dart';
+ 
+ class ListAlokasiPage extends StatefulWidget {
+   @override
+@@ -198,93 +174,91 @@ Future<void> fetchAlokasiData(String idsem) async {
+                                         .map<DropdownMenuItem<String>>((String value) {
+                                       return DropdownMenuItem<String>(
+                                         value: value,
+-                                        child: Text(value),
++                                        child: Text(value.split(" - ")[1]),
+                                       );
+                                     }).toList(),
+                                   ),
+                           ],
+                         ),
+                       ),
+-                  Container(
+-                child:
+-                    SingleChildScrollView(
+-                        scrollDirection: Axis.horizontal,
+-                        child: ConstrainedBox(
+-                          constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width),
+-                          child: DataTable(
+-                            columnSpacing: 16.0,
+-                            headingRowColor: MaterialStateProperty.resolveWith(
+-                              (states) => const Color(0xFF162953),
+-                            ),
+-                            columns: const [
+-                              DataColumn(
+-                                label: Text(
+-                                  'Id Alokasi',
+-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+-                                ),
++                  SingleChildScrollView(
++                      scrollDirection: Axis.horizontal,
++                      child: ConstrainedBox(
++                        constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width),
++                        child: DataTable(
++                          columnSpacing: 16.0,
++                          headingRowColor: WidgetStateProperty.resolveWith(
++                            (states) => const Color(0xFF162953),
++                          ),
++                          columns: const [
++                            DataColumn(
++                              label: Text(
++                                'Id Alokasi',
++                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                               ),
+-                              DataColumn(
+-                                label: Text(
+-                                  'Program Studi',
+-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+-                                ),
++                            ),
++                            DataColumn(
++                              label: Text(
++                                'Program Studi',
++                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                               ),
+-                              DataColumn(
+-                                label: Text(
+-                                  'Status',
+-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+-                                ),
++                            ),
++                            DataColumn(
++                              label: Text(
++                                'Status',
++                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                               ),
+-                              DataColumn(
+-                                label: Text(
+-                                  ' ',
+-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+-                                ),
++                            ),
++                            DataColumn(
++                              label: Text(
++                                ' ',
++                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                               ),
+-                            ],
+-                            rows: DataAlokasi.map((alokasi) {
+-                              return DataRow(
+-                                cells: [
+-                                  DataCell(Text(alokasi.idAlokasi)),
+-                                  DataCell(Text(alokasi.namaProdi)),
+-                                  DataCell(Text(alokasi.status)),
+-                                  DataCell(
+-                                    ElevatedButton(
+-                                      style: ElevatedButton.styleFrom(
+-                                        backgroundColor: Colors.blue,
+-                                        shape: RoundedRectangleBorder(
+-                                          borderRadius: BorderRadius.circular(10),
+-                                        ),
+-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+-                                      ),
+-                                      onPressed: () {
+-                                        // Handle button press
+-                                        Navigator.push(
+-                                          context,
+-                                          MaterialPageRoute(
+-                                            builder: (context) => AlokasiPage(alokasi : alokasi),
+-                                          )
+-                                        );
+-                                      },
+-                                      child: Row(
+-                                        mainAxisSize: MainAxisSize.min,
+-                                        children: const [
+-                                          Icon(Icons.details, color: Colors.white),
+-                                          SizedBox(width: 8),
+-                                          Text(
+-                                            'Detail',
+-                                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+-                                          ),
+-                                        ],
++                            ),
++                          ],
++                          rows: DataAlokasi.map((alokasi) {
++                            return DataRow(
++                              cells: [
++                                DataCell(Text(alokasi.idAlokasi)),
++                                DataCell(Text(alokasi.namaProdi)),
++                                DataCell(Text(alokasi.status)),
++                                DataCell(
++                                  ElevatedButton(
++                                    style: ElevatedButton.styleFrom(
++                                      backgroundColor: Colors.blue,
++                                      shape: RoundedRectangleBorder(
++                                        borderRadius: BorderRadius.circular(10),
+                                       ),
++                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
++                                    ),
++                                    onPressed: () {
++                                      // Handle button press
++                                      Navigator.push(
++                                        context,
++                                        MaterialPageRoute(
++                                          builder: (context) => AlokasiPage(alokasi : alokasi),
++                                        )
++                                      );
++                                    },
++                                    child: Row(
++                                      mainAxisSize: MainAxisSize.min,
++                                      children: const [
++                                        Icon(Icons.details, color: Colors.white),
++                                        SizedBox(width: 8),
++                                        Text(
++                                          'Detail',
++                                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
++                                        ),
++                                      ],
+                                     ),
+                                   ),
+-                                ],
+-                              );
+-                            }).toList(),
+-                          ),
++                                ),
++                              ],
++                            );
++                          }).toList(),
+                         ),
+-                      ),),
++                      ),
++                    ),
+               ],
+             ),
+         ),
+diff --git a/frontend/siris/lib/BA/indexBA.dart b/frontend/siris/lib/BA/indexBA.dart
+index 2f92826..fc96a67 100644
+--- a/frontend/siris/lib/BA/indexBA.dart
++++ b/frontend/siris/lib/BA/indexBA.dart
+@@ -1,4 +1,5 @@
+ export 'package:siris/BA/BA_add_ruang_single.dart';
+ export 'package:siris/BA/BA_add_ruang.dart';
+ export 'package:siris/BA/BA_edit_ruang_page.dart';
+-export 'package:siris/BA/BA_list_ruang_page.dart';
+\ No newline at end of file
++export 'package:siris/BA/BA_list_ruang_page.dart';
++export 'package:siris/BA/BA_list_alokasi_page.dart';
+\ No newline at end of file
+diff --git a/frontend/siris/lib/class/Jadwal.dart b/frontend/siris/lib/class/Jadwal.dart
+index 048a4c3..825ce56 100644
+--- a/frontend/siris/lib/class/Jadwal.dart
++++ b/frontend/siris/lib/class/Jadwal.dart
+@@ -1,4 +1,5 @@
+ class Jadwal {
++  final String idJadwal;
+   final String KodeMK;
+   final String NamaMK;
+   final String Ruangan;
+@@ -10,6 +11,7 @@ class Jadwal {
+   final List<String> DosenPengampu;
+ 
+   Jadwal({
++    required this.idJadwal,
+     required this.KodeMK,
+     required this.NamaMK,
+     required this.Ruangan,
+@@ -20,4 +22,20 @@ class Jadwal {
+     required this.SKS,
+     required this.DosenPengampu
+   });
+-}
+\ No newline at end of file
++
++  factory Jadwal.fromJson(Map<String, dynamic> json) {
++    return Jadwal(
++      idJadwal: json['id_jadwal'],
++      KodeMK: json['kode_mk'],
++      NamaMK: json['nama_mk'],
++      Ruangan: json['kode_ruangan'],
++      Hari: json['hari'],
++      JamMulai: json['jam_mulai'],
++      JamSelesai: json['jam_selesai'],
++      Kelas: json['kelas'],
++      SKS: json['sks'],
++      DosenPengampu: List<String>.from(json['dosen_pengampu']),
++    );
++  }
++}
++
+diff --git a/frontend/siris/lib/class/JadwalIRS.dart b/frontend/siris/lib/class/JadwalIRS.dart
+index a94a778..4f1d0c9 100644
+--- a/frontend/siris/lib/class/JadwalIRS.dart
++++ b/frontend/siris/lib/class/JadwalIRS.dart
+@@ -3,6 +3,7 @@ class JadwalIRS extends Jadwal {
+   final String status;
+ 
+   JadwalIRS({
++    required super.idJadwal,
+     required super.KodeMK,
+     required super.NamaMK,
+     required super.Ruangan,
+@@ -17,6 +18,7 @@ class JadwalIRS extends Jadwal {
+ 
+   factory JadwalIRS.fromJson(Map<String, dynamic> json) {
+     return JadwalIRS(
++      idJadwal: json['id_jadwal'],
+       KodeMK: json['kode_mk'],
+       NamaMK: json['nama_mk'],
+       Ruangan: json['kode_ruangan'],
+diff --git a/frontend/siris/lib/class/JadwalProdi.dart b/frontend/siris/lib/class/JadwalProdi.dart
+index 5e048fd..56a2227 100644
+--- a/frontend/siris/lib/class/JadwalProdi.dart
++++ b/frontend/siris/lib/class/JadwalProdi.dart
+@@ -1,21 +1,22 @@
+-import 'package:siris/class/Jadwal.dart';
+-
+ class JadwalProdi {
++  final String idJadwal;
+   final String namaProdi;
+-  final List<Jadwal> jadwals;
++  final String idSem;
+   final String status; // Status persetujuan
+ 
+   JadwalProdi({
++    required this.idJadwal,
+     required this.namaProdi,
+-    required this.jadwals,
++    required this.idSem,
+     required this.status,
+   });
+ 
+   factory JadwalProdi.fromJson(Map<String, dynamic> json) {
+     return JadwalProdi(
+-      namaProdi: json['kode_mk'],
+-      jadwals: json['nama_mk'],
+-      status: json['kode_ruangan'],
++      idJadwal: json['id_jadwal_prodi'],
++      namaProdi: json['nama_prodi'],
++      idSem: json['idsem'],
++      status: json['status'],
+     );
+   }
+ }
+\ No newline at end of file
+diff --git a/frontend/siris/lib/class/indexClass.dart b/frontend/siris/lib/class/indexClass.dart
+index 8497499..eceeb0e 100644
+--- a/frontend/siris/lib/class/indexClass.dart
++++ b/frontend/siris/lib/class/indexClass.dart
+@@ -1,4 +1,5 @@
+ export 'package:siris/class/Jadwal.dart';
+ export 'package:siris/class/JadwalIRS.dart';
+ export 'package:siris/class/JadwalProdi.dart';
+-export 'package:siris/class/Ruang.dart';
+\ No newline at end of file
++export 'package:siris/class/Ruang.dart';
++export 'package:siris/class/alokasiRuang.dart';
+diff --git a/frontend/siris/lib/dashboard.dart b/frontend/siris/lib/dashboard.dart
+index d64f06d..2de9bdc 100644
+--- a/frontend/siris/lib/dashboard.dart
++++ b/frontend/siris/lib/dashboard.dart
+@@ -27,7 +27,7 @@ class DashboardState extends State<Dashboard> {
+         return _dashboardDekan(context);
+       case "Kaprodi":
+         return _dashboardKaprodi(context);
+-      case "Baka":
++      case "Bagian Akademik":
+         return _dashboardBaka(context);
+       default:
+         loggerDashboard.warning("Role hasn't been set");
+@@ -145,11 +145,83 @@ class DashboardState extends State<Dashboard> {
+     );
+   }
+ 
+-  Widget _dashboardDosen(BuildContext context){
+-    return Container();
++  Widget _dashboardDekan(BuildContext context){
++    return Row(
++      children: [
++        Flexible(
++          flex: 2,
++          fit: FlexFit.tight,
++          child: Container(
++            color: Colors.black,
++            child: Text("Test"),
++          ),
++        ),
++        Flexible(
++          flex: 2,
++          fit: FlexFit.tight,
++          child: Expanded(
++            child:Row(
++              children: [
++                Container(
++                  margin: const EdgeInsets.all(4.0),
++                  padding: const EdgeInsets.all(4.0),
++                  decoration: const BoxDecoration(
++                    borderRadius: BorderRadius.all(Radius.circular(10)),
++                    color: Color(0xFF00549C)
++                  ),
++                  child: GestureDetector(
++                    onTap: () => Navigator.pushNamed(context, '/dekan/ruang/', arguments: userData),
++                    child: Column(
++                      children: [
++                        Icon(Icons.room, color: Colors.white),
++                        const SizedBox(width: 5),
++                        Text("Ruangan", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),)
++                      ]
++                    ),
++                  ),
++                ),
++                Container(
++                  margin: const EdgeInsets.all(4.0),
++                  padding: const EdgeInsets.all(4.0),
++                  decoration: const BoxDecoration(
++                    borderRadius: BorderRadius.all(Radius.circular(10)),
++                    color: Color(0xFF00549C)
++                  ),
++                  child: SizedBox(
++                    width: 300,
++                    height: 300,
++                    child: ElevatedButton(
++                      onPressed: () => Navigator.pushNamed(context, '/dekan/jadwal/', arguments: userData),
++                      child: Column(
++                        children: [
++                          Icon(Icons.schedule, color: Colors.white),
++                          const SizedBox(width: 5),
++                          Text("Jadwal", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),)
++                        ]
++                      ),
++                    ),
++                  )
++                )  
++              ],
++            )
++          ),
++        )
++      ],
++    );
++    
++    // return Row(
++    //   children: [
++    //     _buildMenuItem(Icons.schedule, "Jadwal", onTap: () {
++    //       Navigator.pushNamed(context, '/dekan/jadwal/', arguments: userData);
++    //     }),
++    //     _buildMenuItem(Icons.room, "Ruang", onTap: () {
++    //       Navigator.pushNamed(context, '/dekan/ruang/', arguments: userData);
++    //     }),
++    //   ]
++    // );
+   }
+ 
+-  Widget _dashboardDekan(BuildContext context){
++  Widget _dashboardDosen(BuildContext context){
+     return Container();
+   }
+ 
+@@ -209,43 +281,49 @@ class DashboardState extends State<Dashboard> {
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       mainAxisAlignment: MainAxisAlignment.center,
+                       children: [
+-                        Text(
++                        Flexible(
++                          flex: 1,
++                          fit: FlexFit.tight,
++                          child: Text(
+                           'Hi, ${userData['name']}',
+                           style: const TextStyle(
+                             fontSize: 24,
+                             fontWeight: FontWeight.bold,
+                             color: Colors.white,
+                           ),
++                                                    )
+                         ),
+-                        const SizedBox(height: 8),
+-                        Row(
+-                          children: [
+-                            Text(
+-                              '${userData['identifier']}',
+-                              style: const TextStyle(
+-                                fontSize: 16,
+-                                color: Colors.white,
+-                              ),
+-                            ),
+-                            const Padding(
+-                              padding: EdgeInsets.symmetric(horizontal: 8.0),
+-                              child: Text(
+-                                '|',
+-                                style: TextStyle(
++                        Flexible(
++                          flex: 2,
++                          child: Row(
++                            children: [
++                              Text(
++                                '${userData['identifier']}',
++                                style: const TextStyle(
++                                  fontSize: 16,
+                                   color: Colors.white,
+-                                  fontSize: 20,
+                                 ),
+                               ),
+-                            ),
+-                            Text(
+-                              '${userData['jurusan'] ?? userData['departemen']}',
+-                              style: const TextStyle(
+-                                fontSize: 16,
+-                                color: Colors.white,
++                              const Padding(
++                                padding: EdgeInsets.symmetric(horizontal: 8.0),
++                                child: Text(
++                                  '|',
++                                  style: TextStyle(
++                                    color: Colors.white,
++                                    fontSize: 20,
++                                  ),
++                                ),
+                               ),
+-                            )
+-                          ],
+-                        )
++                              Text(
++                                '${userData['jurusan'] ?? userData['departemen']}',
++                                style: const TextStyle(
++                                  fontSize: 16,
++                                  color: Colors.white,
++                                ),
++                              )
++                            ],
++                          )
++                        ),
+                       ],
+                     ),
+                   ),
+@@ -268,13 +346,31 @@ class DashboardState extends State<Dashboard> {
+                   ),
+                 ],
+               ),
+-              child: _buildStatusMahasiswa(userData['currentLoginAs'])
++              child: _buildStatus(userData['currentLoginAs'])
+             ),
+           ],
+         ));
+   }
+ 
+-  Widget _buildStatusMahasiswa(String role){
++    Widget _buildMenuItem(IconData icon, String label, {required VoidCallback onTap}) {
++    return Row(
++      children: [
++        GestureDetector(
++          onTap: onTap,
++          child: Row(
++            children: [
++              Icon(icon, color: Colors.black),
++              const SizedBox(width: 4),
++              Text(label, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),
++              const SizedBox(width: 16),
++            ],
++          ) 
++        ),
++      ]
++    );
++  }
++
++  Widget _buildStatus(String role){
+     if(role == "Mahasiswa"){
+       return Row(
+         mainAxisAlignment: MainAxisAlignment.spaceAround,
+diff --git a/frontend/siris/lib/dekan/jadwal_page.dart b/frontend/siris/lib/dekan/jadwal_page.dart
+index 7fe9a82..2e728af 100644
+--- a/frontend/siris/lib/dekan/jadwal_page.dart
++++ b/frontend/siris/lib/dekan/jadwal_page.dart
+@@ -1,11 +1,14 @@
+ import 'dart:convert';
+-import 'package:siris/class/Jadwal.dart';
++import 'dart:io';
+ import 'package:flutter/material.dart';
+ import 'package:logging/logging.dart';
+ import 'package:http/http.dart' as http;
++import 'package:siris/dekan/detail_jadwal_page.dart';
++import 'package:siris/navbar.dart';
++import '../class/indexClass.dart';
+ 
+ 
+-final loggerJadwal = Logger('jadwalPage');
++final loggerJadwal = Logger('JadwalPage');
+ 
+ class JadwalPage extends StatefulWidget {
+   final Map<String, dynamic> userData;
+@@ -17,30 +20,340 @@ class JadwalPage extends StatefulWidget {
+ }
+ 
+ class JadwalPageState extends State<JadwalPage> {
+-  String? semester;
+-  List<Jadwal> jadwalProdi = [];
++  String? selectedSemester;
++  List<String> idsemPosisiList = [];
++  List<JadwalProdi> jadwalProdi = [];
+   get userData => widget.userData;
+ 
+   @override
+   void initState(){
+     super.initState();
+-    semester = '20241';
+-    fetchJadwalProdi(semester!);
++    fetchIdsemPosisi();
+   }
+ 
+-  Future<void> fetchJadwalProdi(String semester) async {
+-    final url = 'http://localhost:8080/jadwalProdi/$semester';
+-    loggerJadwal.info("Fetching jadwal prodi: $semester");
++  // Function to fetch idsem and posisi data from the backend
++  Future<void> fetchIdsemPosisi() async {
++    final response = await http.get(Uri.parse('http://localhost:8080/semester')); // Replace with your actual API URL
+ 
+-    final response = await http.get(Uri.parse(url));
+-    if (response.statusCode == 200){
++    if (response.statusCode == 200) {
+       final List<dynamic> data = json.decode(response.body);
++      setState(() {
++        idsemPosisiList = data.map((item) => '${item['idsem']} - ${item['posisi']}').toList();
++        if (idsemPosisiList.isNotEmpty) {
++          selectedSemester = idsemPosisiList.last;  // Set default selection after data is loaded
++          String? idsem = selectedSemester?.split(' - ')[0];  // Extract idsem
++          if (idsem != null) {
++            fetchJadwalProdi(idsem); // Trigger the fetch immediately after setting selectedSemester
++          }
++        }
++      });
++    } else {
++      throw Exception('Failed to load idsem and posisi');
+     }
+   }
++
++Future<void> fetchJadwalProdi(String idsem) async {
++  final url = 'http://localhost:8080/dekan/jadwal/$idsem';
++  loggerJadwal.info("Fetching jadwal prodi for semester: $idsem, URL: $url");
++
++  try {
++    final response = await http.get(Uri.parse(url));
++
++    if (response.statusCode == 200) {
++      final Map<String, dynamic> data = json.decode(response.body);
++
++      // Iterate over all prodi keys dynamically
++      setState(() {
++        jadwalProdi.clear();  // Clear previous data
++        data.forEach((prodi, jadwalList) {
++          if (jadwalList is List) {
++            // Assuming the list contains the jadwal data, map it
++            jadwalProdi.addAll(
++              jadwalList.map((item) => JadwalProdi.fromJson(item)).toList(),
++            );
++          }
++        });
++      });
++  
++      loggerJadwal.info("Status Code: ${response.statusCode}, jadwal fetched successfully.");
++    } else {
++      loggerJadwal.warning(
++        "Failed to fetch jadwal. Status Code: ${response.statusCode}, Response: ${response.body}"
++      );
++    }
++  } on FormatException catch (e) {
++    loggerJadwal.severe("Invalid JSON format: $e");
++  } on SocketException catch (e) {
++    loggerJadwal.severe("Network error: $e");
++  } catch (e) {
++    loggerJadwal.severe("Unexpected error: $e");
++  }
++}
++
++
+   
+   @override
+   Widget build(BuildContext context) {
+-    // TODO: implement build
+-    throw UnimplementedError();
++    return Scaffold(
++      appBar: Navbar(userData: userData),
++      body: Scaffold(
++        body: Container(
++          padding: EdgeInsets.symmetric(horizontal: 40),
++          color: Colors.grey[200],
++          child: Container(
++            padding: EdgeInsets.symmetric(horizontal: 40),
++            margin: EdgeInsets.symmetric(vertical: 40),
++            color: Colors.white,
++            child: Column(
++              children: [
++                Container(
++                  margin: EdgeInsets.only(top: 32, bottom: 40),
++                  child: Text(
++                            'Daftar Jadwal Prodi',
++                            style: TextStyle(
++                              fontSize: 32,
++                              fontWeight: FontWeight.bold
++                            ),
++                          )
++                ),
++                Container(
++                  padding: const EdgeInsets.symmetric(vertical: 16),
++                  child: Row(mainAxisAlignment: MainAxisAlignment.center,
++                  children: [
++                    idsemPosisiList.isEmpty
++                      ? const CircularProgressIndicator()
++                      : DropdownButton<String>(
++                          value: selectedSemester,
++                          onChanged: (String? newSemester) {
++                            setState(() {
++                              selectedSemester = newSemester;
++                              String? idsem = selectedSemester?.split(' - ')[0];
++                              loggerJadwal.info(idsem);
++                              if(idsem != null){
++                                fetchJadwalProdi(idsem);
++                              }
++                              else{
++                                debugPrintStack();
++                              }
++                            });
++                          },
++                          items: idsemPosisiList.map<DropdownMenuItem<String>>((String value) {
++                            return DropdownMenuItem<String>(
++                              value: value,
++                              child: Text(value.split(" - ")[1]),
++                            );
++                          }).toList(),
++                      ),
++                    ],
++                  ),
++                ),
++                SingleChildScrollView(
++                  child: ConstrainedBox(
++                    constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width),
++                    child: PaginatedDataTable(
++                      columnSpacing: 16.0,
++                      headingRowColor: WidgetStateProperty.resolveWith(
++                        (states) => const Color(0xFF162953),
++                      ),
++                      columns: const [
++                        DataColumn(
++                          label: Text(
++                            'Id Jadwal',
++                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
++                          ),
++                        ),
++                        DataColumn(
++                          label: Text(
++                            'Program Studi',
++                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
++                          ),
++                        ),
++                        DataColumn(
++                          label: Text(
++                            'Status',
++                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
++                          ),
++                        ),
++                        DataColumn(
++                          label: Text(
++                            ' ',
++                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
++                          ),
++                        ),
++                      ],
++                        source: JadwalDataSource(
++                                  jadwalProdi,
++                                  (idJadwal, idsem) => approveJadwal(context, idJadwal, idsem),
++                                  (idJadwal) => Navigator.push(context, MaterialPageRoute(
++                                    builder:  (context) => DetailJadwalPage(
++                                                            userData: userData, idJadwalProdi: idJadwal)))
++                                )
++                    ),
++                  ),
++                ),
++              ],
++            )
++          ),
++        ),
++      )
++    );
++  }
++
++  Future<void> approveJadwal(BuildContext context, String idJadwal, String idsem) async {
++    final url = "http://localhost:8080/dekan/jadwal/approve/$idJadwal";
++    loggerJadwal.info("Sending request to URL: $url");
++
++    try {
++      final response = await http.put(Uri.parse(url));
++      if (response.statusCode == 200) {
++        loggerJadwal.info("Jadwal with ID $idJadwal approved successfully.");
++        fetchJadwalProdi(idsem);
++        // Tampilkan dialog keberhasilan
++        showDialog(
++          context: context,
++          builder: (context) => AlertDialog(
++            title: const Text('Berhasil'),
++            content: const Text('Jadwal berhasil disetujui.'),
++            actions: [
++              TextButton(
++                onPressed: () => Navigator.of(context).pop(),
++                child: const Text('OK'),
++              ),
++            ],
++          ),
++        );
++      } 
++      else {
++        loggerJadwal.warning(
++            "Failed to approve jadwal. Status Code: ${response.statusCode}, Response: ${response.body}");
++
++        // Tampilkan dialog error
++        showDialog(
++          context: context,
++          builder: (context) => AlertDialog(
++            title: const Text('Gagal'),
++            content: Text(
++                'Gagal menyetujui jadwal. Status Code: ${response.statusCode}'),
++            actions: [
++              TextButton(
++                onPressed: () => Navigator.of(context).pop(),
++                child: const Text('OK'),
++              ),
++            ],
++          ),
++        );
++      }
++    } on FormatException catch (e) {
++      loggerJadwal.severe("Invalid JSON format: $e");
++      showDialog(
++        context: context,
++        builder: (context) => AlertDialog(
++          title: const Text('Error'),
++          content: const Text('Format data tidak valid.'),
++          actions: [
++            TextButton(
++              onPressed: () => Navigator.of(context).pop(),
++              child: const Text('OK'),
++            ),
++          ],
++        ),
++      );
++    } on SocketException catch (e) {
++      loggerJadwal.severe("Network error: $e");
++      showDialog(
++        context: context,
++        builder: (context) => AlertDialog(
++          title: const Text('Koneksi Bermasalah'),
++          content: const Text('Tidak dapat terhubung ke server.'),
++          actions: [
++            TextButton(
++              onPressed: () => Navigator.of(context).pop(),
++              child: const Text('OK'),
++            ),
++          ],
++        ),
++      );
++    } catch (e) {
++      loggerJadwal.severe("Unexpected error: $e");
++      showDialog(
++        context: context,
++        builder: (context) => AlertDialog(
++          title: const Text('Error'),
++          content: const Text('Terjadi kesalahan tak terduga.'),
++          actions: [
++            TextButton(
++              onPressed: () => Navigator.of(context).pop(),
++              child: const Text('OK'),
++            ),
++          ],
++        ),
++      );
++    }
+   }
+-}
+\ No newline at end of file
++
++  Future<Object> detailJadwal(BuildContext context, String idJadwal) async {
++    return Navigator.push(context, MaterialPageRoute(
++                                    builder:  (context) => DetailJadwalPage(
++                                                            userData: userData, idJadwalProdi: idJadwal)));
++  }
++
++}
++
++class JadwalDataSource extends DataTableSource {
++  final List<JadwalProdi> jadwalProdi;
++  final void Function(String idJadwal, String idsem) onApproveJadwal; // Callback untuk persetujuan
++  final Function(String idJadwal) detailJadwal;
++
++  JadwalDataSource(this.jadwalProdi, this.onApproveJadwal, this.detailJadwal);
++
++  @override
++  DataRow? getRow(int index) {
++    if (index >= jadwalProdi.length) return null;
++
++    final jadwal = jadwalProdi[index];
++    final isDisetujui = jadwal.status.toLowerCase() == "sudah disetujui";
++    return DataRow(cells: [
++      DataCell(Text(jadwal.idJadwal)),
++      DataCell(Text(jadwal.namaProdi)),
++      DataCell(Text(jadwal.status)),
++      DataCell(
++        Row(
++          children: [
++            !isDisetujui ?
++            Row(
++              children: [
++                ElevatedButton(
++                  child: const Text('Setujui'),
++                  onPressed: () {
++                    onApproveJadwal(jadwal.idJadwal, jadwal.idSem); // Memanggil callback saat tombol ditekan
++                  },
++                ),
++                ElevatedButton(
++                  child: const Text('Detail'),
++                  onPressed: () {
++                    detailJadwal(jadwal.idJadwal);
++                  },
++                ),
++              ],
++            ) 
++            : ElevatedButton(
++                child: const Text('Detail'),
++                onPressed: () {
++                  detailJadwal(jadwal.idJadwal);
++                },
++              ),
++          ],
++        )
++      ),
++    ]);
++  }
++
++  @override
++  bool get isRowCountApproximate => false;
++
++  @override
++  int get rowCount => jadwalProdi.length;
++
++  @override
++  int get selectedRowCount => 0;
++}
+diff --git a/frontend/siris/lib/login_page.dart b/frontend/siris/lib/login_page.dart
+index ee0ac30..850cf33 100644
+--- a/frontend/siris/lib/login_page.dart
++++ b/frontend/siris/lib/login_page.dart
+@@ -37,7 +37,7 @@ Future<void> _login() async {
+     if(mounted){
+       data['currentLoginAs'] = data['role'];
+       if(data['currentLoginAs'] == "Bagian Akademik"){
+-        Navigator.pushNamed(context, '/dashboard/dosen', arguments: data);
++        Navigator.pushNamed(context, '/test', arguments: data);
+       }
+       else{
+         Navigator.pushNamed(context, '/dashboard', arguments: data);
+diff --git a/frontend/siris/lib/route/routers.dart b/frontend/siris/lib/route/routers.dart
+index 47865f0..27959f6 100644
+--- a/frontend/siris/lib/route/routers.dart
++++ b/frontend/siris/lib/route/routers.dart
+@@ -2,29 +2,41 @@ import 'package:flutter/material.dart';
+ import 'package:logging/logging.dart';
+ import 'package:siris/dashboard.dart';
+ import 'package:siris/dashboard/dosen.dart';
++import 'package:siris/dekan/detail_ruang_page.dart';
++import 'package:siris/dekan/ruang_page.dart';
+ import 'package:siris/dosen/daftar_mahasiswa_perwalian_page.dart';
+ import 'package:siris/mahasiswa/indexMahasiswa.dart';
+ import 'package:siris/login_page.dart';
++import 'package:siris/dekan/indexDekan.dart';
++
+ final logger = Logger('Routers');
+ 
+ class Routers {
+   static Route<dynamic> generateRoute(RouteSettings settings){
+     logger.info('Redirect to ${settings.name}');
+ 
+-    final userData = settings.arguments as Map<String, dynamic>;
++    final data = settings.arguments as Map<String, dynamic>;
+     switch (settings.name) {
+       case '/login':
+         return MaterialPageRoute(builder: (context) => LoginScreen());
+       case '/dashboard':
+-        return MaterialPageRoute(builder: (context) => Dashboard(userData: userData));
+-      case '/dashboard/dosen':
+-        return MaterialPageRoute(builder: (context) => DashboardPageDosen(userData: userData));
++        return MaterialPageRoute(builder: (context) => Dashboard(userData: data));
++      case '/test':
++        return MaterialPageRoute(builder: (context) => DashboardPageDosen(userData: data));
+       case'/irs':
+-        return MaterialPageRoute(builder: (context) => IRSPage(userData: userData));
++        return MaterialPageRoute(builder: (context) => IRSPage(userData: data));
+       case'/Jadwal':
+-        return MaterialPageRoute(builder: (context) => AmbilIRS(userData: userData));
++        return MaterialPageRoute(builder: (context) => AmbilIRS(userData: data));
+       case'/Perwalian':
+-        return MaterialPageRoute(builder: (context) => DaftarMahasiswaPerwalianPage(userData: userData));
++        return MaterialPageRoute(builder: (context) => DaftarMahasiswaPerwalianPage(userData: data));
++      case '/dekan/jadwal/':
++        return MaterialPageRoute(builder: (context) => JadwalPage(userData: data));
++      case '/dekan/jadwal/detail/':
++        return MaterialPageRoute(builder: (context) => DetailJadwalPage(userData: data, idJadwalProdi: data['idJadwal']));
++      case '/dekan/ruang/':
++        return MaterialPageRoute(builder: (context) => RuangPage(userData: data));
++      case '/dekan/ruang/detail/':
++        return MaterialPageRoute(builder: (context) => DetailRuangPage(userData: data, idAlokasiRuang: data['idAlokasi']));
+       default:
+         logger.warning('No route defined for ${settings.name}');
+         return MaterialPageRoute(builder: (_) => Scaffold(body: Center(child: Text("No Route defined"),),));

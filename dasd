@@ -1,0 +1,1422 @@
+[1mdiff --git a/backend/controller/JadwalController.go b/backend/controller/JadwalController.go[m
+[1mindex 8a0dd88..d3d0669 100644[m
+[1m--- a/backend/controller/JadwalController.go[m
+[1m+++ b/backend/controller/JadwalController.go[m
+[36m@@ -588,7 +588,8 @@[m [mGROUP BY[m
+ 		// Tambahkan j.jadwal_id di sini[m
+ 		if err := rows.Scan(&jadwal.JadwalID, &jadwal.KodeMK, &jadwal.NamaMK, &jadwal.Ruangan,[m
+ 			&jadwal.Hari, &jadwal.JamMulai, &jadwal.JamSelesai, &jadwal.Kelas,[m
+[31m-			&jadwal.SKS, &dosenPengampuString, &status); err != nil {[m
+[32m+[m			[32m&jadwal.SKS, &dosenPengampuString, &status);[m[41m [m
+[32m+[m		[32merr != nil {[m
+ 			fmt.Println("Scan error:", err)[m
+ 			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal membaca data jadwal"})[m
+ 		}[m
+[36m@@ -609,3 +610,171 @@[m [mGROUP BY[m
+ [m
+ 	return c.JSON(http.StatusOK, jadwalList)[m
+ }[m
+[32m+[m
+[32m+[m
+[32m+[m[32m// Dekan Related[m
+[32m+[m[32mfunc GetAllJadwalProdi(c echo.Context) error {[m
+[32m+[m	[32midSem := c.Param("idsem")[m
+[32m+[m	[32mquery := `[m
+[32m+[m	[32mSELECT[m[41m [m
+[32m+[m		[32mjp.id_jadwal_prodi, jp.nama_prodi, jp.idsem, jp.status[m
+[32m+[m	[32mFROM[m[41m [m
+[32m+[m		[32mjadwal_prodi jp[m
+[32m+[m	[32mWHERE[m
+[32m+[m		[32mjp.idsem = ?;[m
+[32m+[m	[32m`[m
+[32m+[m	[32mconnection := db.CreateCon()[m
+[32m+[m	[32mrows, err := connection.Query(query, idSem)[m
+[32m+[m	[32mif err != nil {[m
+[32m+[m		[32mfmt.Println("Query error:", err)[m
+[32m+[m		[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal mengambil data jadwal"})[m
+[32m+[m	[32m}[m
+[32m+[m	[32mdefer rows.Close()[m
+[32m+[m
+[32m+[m	[32mgroupedJadwals := make(map[string][]models.JadwalProdiResponse)[m
+[32m+[m
+[32m+[m	[32mfor rows.Next() {[m
+[32m+[m		[32mvar jadwal models.JadwalProdiResponse[m
+[32m+[m		[32mif err := rows.Scan([m
+[32m+[m			[32m&jadwal.JadwalIDProdi, &jadwal.NamaProdi, &jadwal.IdSem, &jadwal.Status);[m[41m [m
+[32m+[m		[32merr != nil {[m
+[32m+[m			[32mfmt.Println("Scan error:", err)[m
+[32m+[m			[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal membaca data jadwal"})[m
+[32m+[m		[32m}[m
+[32m+[m
+[32m+[m		[32m// Tambahkan ke map berdasarkan nama_prodi[m
+[32m+[m		[32mgroupedJadwals[jadwal.NamaProdi] = append(groupedJadwals[jadwal.NamaProdi], jadwal)[m
+[32m+[m	[32m}[m
+[32m+[m	[32mreturn c.JSON(http.StatusOK, groupedJadwals)[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mfunc ApproveJadwal(c echo.Context) error {[m
+[32m+[m	[32midJadwal := c.Param("idjadwal") // Ambil parameter idjadwal dari URL[m
+[32m+[m
+[32m+[m	[32mif idJadwal == "" {[m
+[32m+[m		[32mlog.Println("Error: Parameter idjadwal tidak ditemukan")[m
+[32m+[m		[32mreturn c.JSON(http.StatusBadRequest, map[string]string{[m
+[32m+[m			[32m"message": "Parameter idjadwal tidak valid",[m
+[32m+[m		[32m})[m
+[32m+[m	[32m}[m
+[32m+[m
+[32m+[m	[32mquery := `[m
+[32m+[m		[32mUPDATE jadwal_prodi[m
+[32m+[m		[32mSET status = 'sudah disetujui'[m
+[32m+[m		[32mWHERE id_jadwal_prodi = ?[m
+[32m+[m	[32m`[m
+[32m+[m
+[32m+[m	[32mconnection := db.CreateCon()[m
+[32m+[m
+[32m+[m	[32m// Memulai transaksi database[m
+[32m+[m	[32mtx, err := connection.Begin()[m
+[32m+[m	[32mif err != nil {[m
+[32m+[m		[32mlog.Println("Error: Gagal memulai transaksi:", err)[m
+[32m+[m		[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{[m
+[32m+[m			[32m"message": "Gagal memulai transaksi",[m
+[32m+[m		[32m})[m
+[32m+[m	[32m}[m
+[32m+[m	[32mdefer tx.Rollback()[m
+[32m+[m
+[32m+[m	[32mlog.Printf("Menyetujui jadwal dengan ID: %s\n", idJadwal)[m
+[32m+[m
+[32m+[m	[32m// Eksekusi query[m
+[32m+[m	[32mresult, err := tx.Exec(query, idJadwal)[m
+[32m+[m	[32mif err != nil {[m
+[32m+[m		[32mlog.Println("Error: Gagal memperbarui status jadwal:", err)[m
+[32m+[m		[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{[m
+[32m+[m			[32m"message": "Gagal memperbarui status jadwal",[m
+[32m+[m		[32m})[m
+[32m+[m	[32m}[m
+[32m+[m
+[32m+[m	[32m// Memastikan baris diupdate[m
+[32m+[m	[32mrowsAffected, err := result.RowsAffected()[m
+[32m+[m	[32mif err != nil {[m
+[32m+[m		[32mlog.Println("Error: Gagal mendapatkan jumlah baris yang diperbarui:", err)[m
+[32m+[m		[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{[m
+[32m+[m			[32m"message": "Gagal memeriksa status update",[m
+[32m+[m		[32m})[m
+[32m+[m	[32m}[m
+[32m+[m	[32mif rowsAffected == 0 {[m
+[32m+[m		[32mlog.Println("Warning: Tidak ada jadwal yang ditemukan dengan ID:", idJadwal)[m
+[32m+[m		[32mreturn c.JSON(http.StatusNotFound, map[string]string{[m
+[32m+[m			[32m"message": "Jadwal tidak ditemukan",[m
+[32m+[m		[32m})[m
+[32m+[m	[32m}[m
+[32m+[m
+[32m+[m	[32m// Commit transaksi[m
+[32m+[m	[32mif err := tx.Commit(); err != nil {[m
+[32m+[m		[32mlog.Println("Error: Gagal melakukan commit transaksi:", err)[m
+[32m+[m		[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{[m
+[32m+[m			[32m"message": "Gagal menyetujui jadwal",[m
+[32m+[m		[32m})[m
+[32m+[m	[32m}[m
+[32m+[m
+[32m+[m	[32mlog.Printf("Jadwal dengan ID %s berhasil disetujui\n", idJadwal)[m
+[32m+[m	[32mreturn c.JSON(http.StatusOK, map[string]string{[m
+[32m+[m		[32m"message": "Jadwal berhasil disetujui",[m
+[32m+[m	[32m})[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m
+[32m+[m[32mfunc GetDetailJadwal(c echo.Context) error {[m
+[32m+[m	[32midJadwal := c.Param("idjadwal")[m
+[32m+[m
+[32m+[m	[32mquery := `[m
+[32m+[m		[32mSELECT[m
+[32m+[m			[32mj.jadwal_id,[m
+[32m+[m			[32mj.kode_mk,[m
+[32m+[m			[32mmk.nama_mk,[m
+[32m+[m			[32mj.kode_ruangan,[m
+[32m+[m			[32mj.hari,[m
+[32m+[m			[32mj.jam_mulai,[m
+[32m+[m			[32mj.jam_selesai,[m
+[32m+[m			[32mj.kelas,[m
+[32m+[m			[32mGROUP_CONCAT(DISTINCT d.nama SEPARATOR ', ') AS dosen_pengampu,[m
+[32m+[m			[32mmk.sks[m
+[32m+[m		[32mFROM[m[41m [m
+[32m+[m			[32mjadwal_prodi jp[m
+[32m+[m		[32mINNER JOIN jadwal j[m[41m [m
+[32m+[m			[32mON jp.idsem = j.idsem AND jp.nama_prodi = j.nama_prodi[m
+[32m+[m		[32mINNER JOIN mata_kuliah mk[m[41m [m
+[32m+[m			[32mON j.kode_mk = mk.kode_mk[m
+[32m+[m		[32mLEFT JOIN[m[41m [m
+[32m+[m[41m    [m		[32mdosenpengampu dp ON dp.kode_mk = j.kode_mk AND dp.idsem = j.idsem[m
+[32m+[m		[32mLEFT JOIN dosen d[m[41m [m
+[32m+[m			[32mON dp.nip = d.nip[m
+[32m+[m		[32mWHERE[m[41m [m
+[32m+[m			[32mjp.id_jadwal_prodi = ?[m
+[32m+[m		[32mGROUP BY[m
+[32m+[m			[32mj.jadwal_id, mk.nama_mk, j.kode_ruangan, j.hari, j.jam_mulai, j.jam_selesai, mk.sks;[m
+[32m+[m
+[32m+[m	[32m`[m
+[32m+[m	[32mconnection := db.CreateCon()[m
+[32m+[m	[32mrows, err := connection.Query(query, idJadwal)[m
+[32m+[m	[32mif err != nil {[m
+[32m+[m		[32mfmt.Println("Query error:", err)[m
+[32m+[m		[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal mengambil data jadwal"})[m
+[32m+[m	[32m}[m
+[32m+[m	[32mdefer rows.Close()[m
+[32m+[m
+[32m+[m	[32mgroupedJadwals := make(map[string][]models.Jadwal)[m
+[32m+[m
+[32m+[m	[32mfor rows.Next() {[m
+[32m+[m		[32mvar jadwal models.Jadwal[m
+[32m+[m		[32mvar dosenPengampuString string[m
+[32m+[m
+[32m+[m		[32mif err := rows.Scan([m
+[32m+[m			[32m&jadwal.JadwalID, &jadwal.KodeMK, &jadwal.NamaMK, &jadwal.KodeRuangan,[m[41m [m
+[32m+[m			[32m&jadwal.Hari, &jadwal.JamMulai, &jadwal.JamSelesai, &jadwal.Kelas,[m
+[32m+[m			[32m&dosenPengampuString, &jadwal.SKS,[m[41m [m
+[32m+[m		[32m); err != nil {[m
+[32m+[m			[32mfmt.Println("Scan error:", err)[m
+[32m+[m			[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal membaca data jadwal"})[m
+[32m+[m		[32m}[m
+[32m+[m		[32mjadwal.DosenPengampu = strings.Split(dosenPengampuString, ", ")[m
+[32m+[m
+[32m+[m		[32m// Tambahkan ke map berdasarkan nama_prodi[m
+[32m+[m		[32mgroupedJadwals[jadwal.JadwalID] = append(groupedJadwals[jadwal.JadwalID], jadwal)[m
+[32m+[m	[32m}[m
+[32m+[m	[32mreturn c.JSON(http.StatusOK, groupedJadwals)[m
+[32m+[m[32m}[m
+[41m+[m
+[1mdiff --git a/backend/controller/auth.go b/backend/controller/auth.go[m
+[1mindex f23676c..fe65d70 100644[m
+[1m--- a/backend/controller/auth.go[m
+[1m+++ b/backend/controller/auth.go[m
+[36m@@ -253,6 +253,18 @@[m [mfunc Login(c echo.Context) error {[m
+ 		}[m
+ 		userResponse.Role = "Dosen"[m
+ 		log.Println("Dosen data fetched successfully")[m
+[32m+[m
+[32m+[m	[32mcase "Dekan":[m
+[32m+[m		[32mlog.Println("Fetching data for Dekan role...")[m
+[32m+[m		[32merr = connection.QueryRow("SELECT d.nip, d.nama FROM dosen d JOIN user u ON d.user_id = u.user_id WHERE u.email = ?", req.Email).[m
+[32m+[m			[32mScan(&userResponse.Identifier, &userResponse.Name)[m
+[32m+[m		[32mif err != nil {[m
+[32m+[m			[32mlog.Println("Error fetching Dekan data:", err) // Debugging error saat query dosen[m
+[32m+[m			[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{"message": "Internal server error"})[m
+[32m+[m		[32m}[m
+[32m+[m		[32muserResponse.Role = "Dekan"[m
+[32m+[m		[32mlog.Println("Dekan data fetched successfully")[m
+[32m+[m
+ 	case "Bagian Akademik":[m
+ 		log.Println(("Fetching data for Bagian Akademik Role"))[m
+ 		err = connection.QueryRow("SELECT b.nip, b.nama from bagian_akademik b JOIN user u on b.user_id = u.user_id WHERE u.email = ?", req.Email).[m
+[36m@@ -263,6 +275,7 @@[m [mfunc Login(c echo.Context) error {[m
+ 		}[m
+ 		userResponse.Role = "Bagian Akademik"[m
+ 		log.Println("Bagian Akademik data fetched successfully")[m
+[32m+[m[41m		[m
+ 	default:[m
+ 		log.Println("Invalid role for user:", req.Email) // Debugging jika role tidak ditemukan[m
+ 		return c.JSON(http.StatusUnauthorized, map[string]string{"message": "User role not found"})[m
+[1mdiff --git a/backend/controller/ruangController.go b/backend/controller/ruangController.go[m
+[1mindex 7a76e52..f7b89f5 100644[m
+[1m--- a/backend/controller/ruangController.go[m
+[1m+++ b/backend/controller/ruangController.go[m
+[36m@@ -292,3 +292,156 @@[m [mfunc DeleteMultipleRuang(c echo.Context) error {[m
+ 		"message": "Selected rooms deleted successfully",[m
+ 	})[m
+ }[m
+[32m+[m
+[32m+[m[32m// Dekan Related[m
+[32m+[m[32mfunc GetAllRuangProdi(c echo.Context) error {[m
+[32m+[m	[32midSem := c.Param("idsem")[m
+[32m+[m	[32mquery := `[m
+[32m+[m	[32mSELECT[m[41m [m
+[32m+[m		[32mar.id_alokasi, ar.nama_prodi, ar.idsem, ar.status[m
+[32m+[m	[32mFROM[m[41m [m
+[32m+[m		[32malokasi_ruang ar[m
+[32m+[m	[32mWHERE[m
+[32m+[m		[32mar.idsem = ?;[m
+[32m+[m	[32m`[m
+[32m+[m	[32mconnection := db.CreateCon()[m
+[32m+[m	[32mrows, err := connection.Query(query, idSem)[m
+[32m+[m	[32mif err != nil {[m
+[32m+[m		[32mfmt.Println("Query error:", err)[m
+[32m+[m		[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal mengambil data ruang"})[m
+[32m+[m	[32m}[m
+[32m+[m	[32mdefer rows.Close()[m
+[32m+[m
+[32m+[m	[32mgroupedRuangs := make(map[string][]models.AlokasiRuang)[m
+[32m+[m
+[32m+[m	[32mfor rows.Next() {[m
+[32m+[m		[32mvar ruang models.AlokasiRuang[m
+[32m+[m		[32mif err := rows.Scan([m
+[32m+[m			[32m&ruang.IdAlokasi, &ruang.NamaProdi, &ruang.IdSem, &ruang.Status);[m[41m [m
+[32m+[m		[32merr != nil {[m
+[32m+[m			[32mfmt.Println("Scan error:", err)[m
+[32m+[m			[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal membaca data ruang"})[m
+[32m+[m		[32m}[m
+[32m+[m
+[32m+[m		[32m// Tambahkan ke map berdasarkan nama_prodi[m
+[32m+[m		[32mgroupedRuangs[ruang.NamaProdi] = append(groupedRuangs[ruang.NamaProdi], ruang)[m
+[32m+[m	[32m}[m
+[32m+[m	[32mreturn c.JSON(http.StatusOK, groupedRuangs)[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mfunc ApproveRuang(c echo.Context) error {[m
+[32m+[m	[32midAlokasi := c.Param("idalokasi") // Ambil parameter idjadwal dari URL[m
+[32m+[m
+[32m+[m	[32mif idAlokasi == "" {[m
+[32m+[m		[32mlog.Println("Error: Parameter idAlokasi tidak ditemukan")[m
+[32m+[m		[32mreturn c.JSON(http.StatusBadRequest, map[string]string{[m
+[32m+[m			[32m"message": "Parameter idAlokasi tidak valid",[m
+[32m+[m		[32m})[m
+[32m+[m	[32m}[m
+[32m+[m
+[32m+[m	[32mquery := `[m
+[32m+[m		[32mUPDATE alokasi_ruang[m
+[32m+[m		[32mSET status = 'sudah disetujui'[m
+[32m+[m		[32mWHERE id_alokasi = ?[m
+[32m+[m	[32m`[m
+[32m+[m
+[32m+[m	[32mconnection := db.CreateCon()[m
+[32m+[m
+[32m+[m	[32m// Memulai transaksi database[m
+[32m+[m	[32mtx, err := connection.Begin()[m
+[32m+[m	[32mif err != nil {[m
+[32m+[m		[32mlog.Println("Error: Gagal memulai transaksi:", err)[m
+[32m+[m		[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{[m
+[32m+[m			[32m"message": "Gagal memulai transaksi",[m
+[32m+[m		[32m})[m
+[32m+[m	[32m}[m
+[32m+[m	[32mdefer tx.Rollback()[m
+[32m+[m
+[32m+[m	[32mlog.Printf("Menyetujui ruang dengan ID: %s\n", idAlokasi)[m
+[32m+[m
+[32m+[m	[32m// Eksekusi query[m
+[32m+[m	[32mresult, err := tx.Exec(query, idAlokasi)[m
+[32m+[m	[32mif err != nil {[m
+[32m+[m		[32mlog.Println("Error: Gagal memperbarui status ruang:", err)[m
+[32m+[m		[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{[m
+[32m+[m			[32m"message": "Gagal memperbarui status ruang",[m
+[32m+[m		[32m})[m
+[32m+[m	[32m}[m
+[32m+[m
+[32m+[m	[32m// Memastikan baris diupdate[m
+[32m+[m	[32mrowsAffected, err := result.RowsAffected()[m
+[32m+[m	[32mif err != nil {[m
+[32m+[m		[32mlog.Println("Error: Gagal mendapatkan jumlah baris yang diperbarui:", err)[m
+[32m+[m		[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{[m
+[32m+[m			[32m"message": "Gagal memeriksa status update",[m
+[32m+[m		[32m})[m
+[32m+[m	[32m}[m
+[32m+[m	[32mif rowsAffected == 0 {[m
+[32m+[m		[32mlog.Println("Warning: Tidak ada ruang yang ditemukan dengan ID:", idAlokasi)[m
+[32m+[m		[32mreturn c.JSON(http.StatusNotFound, map[string]string{[m
+[32m+[m			[32m"message": "Ruang tidak ditemukan",[m
+[32m+[m		[32m})[m
+[32m+[m	[32m}[m
+[32m+[m
+[32m+[m	[32m// Commit transaksi[m
+[32m+[m	[32mif err := tx.Commit(); err != nil {[m
+[32m+[m		[32mlog.Println("Error: Gagal melakukan commit transaksi:", err)[m
+[32m+[m		[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{[m
+[32m+[m			[32m"message": "Gagal menyetujui ruang",[m
+[32m+[m		[32m})[m
+[32m+[m	[32m}[m
+[32m+[m
+[32m+[m	[32mlog.Printf("Ruang dengan ID %s berhasil disetujui\n", idAlokasi)[m
+[32m+[m	[32mreturn c.JSON(http.StatusOK, map[string]string{[m
+[32m+[m		[32m"message": "Ruang berhasil disetujui",[m
+[32m+[m	[32m})[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mfunc GetDetailRuang(c echo.Context) error {[m
+[32m+[m	[32midAlokasi := c.Param("idalokasi")[m
+[32m+[m
+[32m+[m	[32mquery := `[m
+[32m+[m		[32mSELECT[m
+[32m+[m			[32mr.kode_ruang,[m
+[32m+[m			[32mr.nama_ruang,[m
+[32m+[m			[32mr.gedung,[m
+[32m+[m			[32mr.lantai,[m
+[32m+[m			[32mr.fungsi,[m
+[32m+[m			[32mr.kapasitas[m
+[32m+[m		[32mFROM[m[41m [m
+[32m+[m			[32malokasi_ruang_detail ard[m
+[32m+[m		[32mINNER JOIN ruang r[m
+[32m+[m			[32mON r.kode_ruang = ard.kode_ruang[m[41m	[m
+[32m+[m		[32mWHERE[m[41m [m
+[32m+[m			[32mard.id_alokasi = ?[m
+[32m+[m[41m	[m
+[32m+[m	[32m`[m
+[32m+[m	[32mconnection := db.CreateCon()[m
+[32m+[m	[32mrows, err := connection.Query(query, idAlokasi)[m
+[32m+[m	[32mif err != nil {[m
+[32m+[m[32m        fmt.Printf("Query error (ID Alokasi: %s): %v\n", idAlokasi, err)[m
+[32m+[m		[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal mengambil data ruang"})[m
+[32m+[m	[32m}[m
+[32m+[m	[32mdefer rows.Close()[m
+[32m+[m
+[32m+[m	[32mgroupedRuangs := make(map[string][]models.Ruang)[m
+[32m+[m
+[32m+[m	[32mfor rows.Next() {[m
+[32m+[m		[32mvar ruang models.Ruang[m
+[32m+[m[41m	[m
+[32m+[m		[32mif err := rows.Scan([m
+[32m+[m			[32m&ruang.KodeRuang, &ruang.NamaRuang, &ruang.Gedung, &ruang.Lantai,[m[41m [m
+[32m+[m			[32m&ruang.Fungsi, &ruang.Kapasitas,[m
+[32m+[m		[32m); err != nil {[m
+[32m+[m			[32mfmt.Println("Scan error:", err)[m
+[32m+[m			[32mreturn c.JSON(http.StatusInternalServerError, map[string]string{"message": "Gagal membaca data ruang"})[m
+[32m+[m		[32m}[m
+[32m+[m[41m	[m
+[32m+[m		[32m// Tambahkan ke slice[m
+[32m+[m		[32mfmt.Println("Grouped Ruangs: ", groupedRuangs)[m
+[32m+[m		[32mgroupedRuangs[ruang.KodeRuang] = append(groupedRuangs[ruang.KodeRuang], ruang)[m
+[32m+[m	[32m}[m
+[32m+[m	[32mreturn c.JSON(http.StatusOK, groupedRuangs)[m
+[32m+[m[32m}[m
+[41m+[m
+[41m+[m
+[1mdiff --git a/backend/main.go b/backend/main.go[m
+[1mindex 722f9b0..47377d7 100644[m
+[1m--- a/backend/main.go[m
+[1m+++ b/backend/main.go[m
+[36m@@ -47,6 +47,18 @@[m [mfunc main() {[m
+ [m
+ 	e.POST("/add-ruang-alokasi/:idAlokasi", controller.AddRuangToAlokasi)[m
+ [m
+[32m+[m	[32m// Route Dekan[m
+[32m+[m		[32m// Jadwal Related[m
+[32m+[m	[32me.GET("/dekan/jadwal/:idsem", controller.GetAllJadwalProdi)[m
+[32m+[m	[32me.PUT("/dekan/jadwal/approve/:idjadwal", controller.ApproveJadwal)[m
+[32m+[m	[32me.GET("/dekan/jadwal/detail/:idjadwal", controller.GetDetailJadwal)[m
+[32m+[m
+[32m+[m		[32m// Ruang Related[m
+[32m+[m	[32me.GET("/dekan/ruang/:idsem", controller.GetAllRuangProdi)[m
+[32m+[m	[32me.PUT("/dekan/ruang/approve/:idalokasi", controller.ApproveRuang)[m
+[32m+[m	[32me.GET("/dekan/ruang/detail/:idalokasi", controller.GetDetailRuang)[m
+[32m+[m[41m	[m
+[32m+[m
+ 	// Middleware untuk menangani CORS[m
+ 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{[m
+ 		AllowOrigins: []string{"http://localhost:8081"}, // ganti port sesuai yang digunakan Flutter[m
+[1mdiff --git a/backend/models/jadwal.go b/backend/models/jadwal.go[m
+[1mindex 1f64dc0..f20a9d5 100644[m
+[1m--- a/backend/models/jadwal.go[m
+[1m+++ b/backend/models/jadwal.go[m
+[36m@@ -1,14 +1,14 @@[m
+ package models[m
+ [m
+[31m-import "time"[m
+[31m-[m
+[31m-// Tabel Jadwal[m
+ type Jadwal struct {[m
+[31m-	JadwalID    int       `json:"jadwal_id" db:"jadwal_id"`[m
+[31m-	KodeMK      string    `json:"kode_mk" db:"kode_mk"`[m
+[31m-	NipPengajar string    `json:"nip_pengajar" db:"nip_pengajar"`[m
+[31m-	KodeRuangan string    `json:"kode_ruangan" db:"kode_ruangan"`[m
+[31m-	Hari        string    `json:"hari" db:"hari"` // ENUM: "Senin", "Selasa", "Rabu", "Kamis", "Jumat"[m
+[31m-	JamMulai    time.Time `json:"jam_mulai" db:"jam_mulai"`[m
+[31m-	JamSelesai  time.Time `json:"jam_selesai" db:"jam_selesai"`[m
+[31m-}[m
+[32m+[m	[32mJadwalID    	string `json:"id_jadwal"`[m
+[32m+[m	[32mKodeMK			string `json:"kode_mk"`[m
+[32m+[m	[32mNamaMK      	string `json:"nama_mk"`[m
+[32m+[m	[32mKodeRuangan 	string `json:"kode_ruangan"`[m
+[32m+[m	[32mHari        	string `json:"hari"`[m
+[32m+[m	[32mJamMulai    	string `json:"jam_mulai"`[m
+[32m+[m	[32mJamSelesai  	string `json:"jam_selesai"`[m
+[32m+[m	[32mDosenPengampu []string `json:"dosen_pengampu"`[m
+[32m+[m	[32mKelas			string `json:"kelas"`[m
+[32m+[m	[32mSKS         	int    `json:"sks"`[m
+[32m+[m[32m}[m
+\ No newline at end of file[m
+[1mdiff --git a/backend/models/ruang.go b/backend/models/ruang.go[m
+[1mindex 86c1f38..25ff03a 100644[m
+[1m--- a/backend/models/ruang.go[m
+[1m+++ b/backend/models/ruang.go[m
+[36m@@ -1,7 +1,10 @@[m
+ package models[m
+ [m
+[31m-// Tabel Ruangan[m
+[31m-type Ruangan struct {[m
+[31m-	KodeRuangan string `json:"kode_ruangan" db:"kode_ruangan"`[m
+[31m-	Kapasitas   int    `json:"kapasitas" db:"kapasitas"`[m
+[32m+[m[32mtype Ruang struct {[m
+[32m+[m	[32mKodeRuang string `json:"kode_ruang" db:"kode_ruang"`[m
+[32m+[m	[32mNamaRuang string `json:"nama_ruang" db:"nama_ruang"` // Name of the room[m
+[32m+[m	[32mGedung    string `json:"gedung" db:"gedung"`         // Building where the room is located[m
+[32m+[m	[32mLantai    int    `json:"lantai" db:"lantai"`         // Floor number[m
+[32m+[m	[32mFungsi    string `json:"fungsi" db:"fungsi"`         // Function/purpose of the room[m
+[32m+[m	[32mKapasitas *int   `json:"kapasitas" db:"kapasitas"`   // Room capacity, optional (nullable)[m
+ }[m
+[1mdiff --git a/backend/models/ruangv2.go b/backend/models/ruangv2.go[m
+[1mdeleted file mode 100644[m
+[1mindex 25ff03a..0000000[m
+[1m--- a/backend/models/ruangv2.go[m
+[1m+++ /dev/null[m
+[36m@@ -1,10 +0,0 @@[m
+[31m-package models[m
+[31m-[m
+[31m-type Ruang struct {[m
+[31m-	KodeRuang string `json:"kode_ruang" db:"kode_ruang"`[m
+[31m-	NamaRuang string `json:"nama_ruang" db:"nama_ruang"` // Name of the room[m
+[31m-	Gedung    string `json:"gedung" db:"gedung"`         // Building where the room is located[m
+[31m-	Lantai    int    `json:"lantai" db:"lantai"`         // Floor number[m
+[31m-	Fungsi    string `json:"fungsi" db:"fungsi"`         // Function/purpose of the room[m
+[31m-	Kapasitas *int   `json:"kapasitas" db:"kapasitas"`   // Room capacity, optional (nullable)[m
+[31m-}[m
+[1mdiff --git a/frontend/siris/lib/BA/BA_alokasi_page.dart b/frontend/siris/lib/BA/BA_alokasi_page.dart[m
+[1mindex 549d1c4..d4c8187 100644[m
+[1m--- a/frontend/siris/lib/BA/BA_alokasi_page.dart[m
+[1m+++ b/frontend/siris/lib/BA/BA_alokasi_page.dart[m
+[36m@@ -2,40 +2,9 @@[m [mimport 'dart:convert';[m
+ // import 'dart:ffi';[m
+ import 'package:flutter/material.dart';[m
+ import 'package:http/http.dart' as http;[m
+[31m-import 'package:siris/BA/BA_list_alokasi_page.dart';[m
+[31m-[m
+[31m-class Ruang {[m
+[31m-  final String kodeRuang;[m
+[31m-  final String namaRuang;[m
+[31m-  final String gedung;[m
+[31m-  final int lantai;[m
+[31m-  final String fungsi;[m
+[31m-  final int kapasitas;[m
+[31m-[m
+[31m-  Ruang({[m
+[31m-    required this.kodeRuang,[m
+[31m-    required this.namaRuang,[m
+[31m-    required this.gedung,[m
+[31m-    required this.lantai,[m
+[31m-    required this.fungsi,[m
+[31m-    required this.kapasitas,[m
+[31m-  });[m
+[31m-[m
+[31m-  factory Ruang.fromJson(Map<String, dynamic> json) {[m
+[31m-    return Ruang([m
+[31m-      kodeRuang: json['kode_ruang'],[m
+[31m-      namaRuang: json['nama_ruang'],[m
+[31m-      gedung: json['gedung'],[m
+[31m-      lantai: json['lantai'],[m
+[31m-      fungsi: json['fungsi'],[m
+[31m-      kapasitas: json['kapasitas'],[m
+[31m-    );[m
+[31m-  }[m
+[31m-}[m
+[32m+[m[32mimport 'package:siris/class/indexClass.dart';[m
+ [m
+ class AlokasiPage extends StatefulWidget {[m
+[31m-[m
+[31m-[m
+     final AlokasiRuang alokasi;[m
+ [m
+   AlokasiPage({required this.alokasi});[m
+[1mdiff --git a/frontend/siris/lib/BA/BA_list_alokasi_page.dart b/frontend/siris/lib/BA/BA_list_alokasi_page.dart[m
+[1mindex 18b7159..f821f0d 100644[m
+[1m--- a/frontend/siris/lib/BA/BA_list_alokasi_page.dart[m
+[1m+++ b/frontend/siris/lib/BA/BA_list_alokasi_page.dart[m
+[36m@@ -3,31 +3,7 @@[m [mimport 'dart:convert';[m
+ import 'package:flutter/material.dart';[m
+ import 'package:http/http.dart' as http;[m
+ import 'package:siris/BA/BA_alokasi_page.dart';[m
+[31m-[m
+[31m-class AlokasiRuang {[m
+[31m-  final String idAlokasi;[m
+[31m-  final String idSem;[m
+[31m-  final String namaProdi;[m
+[31m-  final String status;[m
+[31m-[m
+[31m-[m
+[31m-  AlokasiRuang({[m
+[31m-    required this.idAlokasi,[m
+[31m-    required this.idSem,[m
+[31m-    required this.namaProdi,[m
+[31m-    required this.status,[m
+[31m-  });[m
+[31m-[m
+[31m-  factory AlokasiRuang.fromJson(Map<String, dynamic> json) {[m
+[31m-    return AlokasiRuang([m
+[31m-      idAlokasi: json['id_alokasi'],[m
+[31m-      idSem: json['idsem'],[m
+[31m-      namaProdi: json['nama_prodi'],[m
+[31m-      status: json['status'],[m
+[31m-    );[m
+[31m-  }[m
+[31m-}[m
+[31m-[m
+[32m+[m[32mimport 'package:siris/class/indexClass.dart';[m
+ [m
+ class ListAlokasiPage extends StatefulWidget {[m
+   @override[m
+[36m@@ -198,93 +174,91 @@[m [mFuture<void> fetchAlokasiData(String idsem) async {[m
+                                         .map<DropdownMenuItem<String>>((String value) {[m
+                                       return DropdownMenuItem<String>([m
+                                         value: value,[m
+[31m-                                        child: Text(value),[m
+[32m+[m[32m                                        child: Text(value.split(" - ")[1]),[m
+                                       );[m
+                                     }).toList(),[m
+                                   ),[m
+                           ],[m
+                         ),[m
+                       ),[m
+[31m-                  Container([m
+[31m-                child:[m
+[31m-                    SingleChildScrollView([m
+[31m-                        scrollDirection: Axis.horizontal,[m
+[31m-                        child: ConstrainedBox([m
+[31m-                          constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width),[m
+[31m-                          child: DataTable([m
+[31m-                            columnSpacing: 16.0,[m
+[31m-                            headingRowColor: MaterialStateProperty.resolveWith([m
+[31m-                              (states) => const Color(0xFF162953),[m
+[31m-                            ),[m
+[31m-                            columns: const [[m
+[31m-                              DataColumn([m
+[31m-                                label: Text([m
+[31m-                                  'Id Alokasi',[m
+[31m-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+[31m-                                ),[m
+[32m+[m[32m                  SingleChildScrollView([m
+[32m+[m[32m                      scrollDirection: Axis.horizontal,[m
+[32m+[m[32m                      child: ConstrainedBox([m
+[32m+[m[32m                        constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width),[m
+[32m+[m[32m                        child: DataTable([m
+[32m+[m[32m                          columnSpacing: 16.0,[m
+[32m+[m[32m                          headingRowColor: WidgetStateProperty.resolveWith([m
+[32m+[m[32m                            (states) => const Color(0xFF162953),[m
+[32m+[m[32m                          ),[m
+[32m+[m[32m                          columns: const [[m
+[32m+[m[32m                            DataColumn([m
+[32m+[m[32m                              label: Text([m
+[32m+[m[32m                                'Id Alokasi',[m
+[32m+[m[32m                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+                               ),[m
+[31m-                              DataColumn([m
+[31m-                                label: Text([m
+[31m-                                  'Program Studi',[m
+[31m-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+[31m-                                ),[m
+[32m+[m[32m                            ),[m
+[32m+[m[32m                            DataColumn([m
+[32m+[m[32m                              label: Text([m
+[32m+[m[32m                                'Program Studi',[m
+[32m+[m[32m                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+                               ),[m
+[31m-                              DataColumn([m
+[31m-                                label: Text([m
+[31m-                                  'Status',[m
+[31m-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+[31m-                                ),[m
+[32m+[m[32m                            ),[m
+[32m+[m[32m                            DataColumn([m
+[32m+[m[32m                              label: Text([m
+[32m+[m[32m                                'Status',[m
+[32m+[m[32m                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+                               ),[m
+[31m-                              DataColumn([m
+[31m-                                label: Text([m
+[31m-                                  ' ',[m
+[31m-                                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+[31m-                                ),[m
+[32m+[m[32m                            ),[m
+[32m+[m[32m                            DataColumn([m
+[32m+[m[32m                              label: Text([m
+[32m+[m[32m                                ' ',[m
+[32m+[m[32m                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+                               ),[m
+[31m-                            ],[m
+[31m-                            rows: DataAlokasi.map((alokasi) {[m
+[31m-                              return DataRow([m
+[31m-                                cells: [[m
+[31m-                                  DataCell(Text(alokasi.idAlokasi)),[m
+[31m-                                  DataCell(Text(alokasi.namaProdi)),[m
+[31m-                                  DataCell(Text(alokasi.status)),[m
+[31m-                                  DataCell([m
+[31m-                                    ElevatedButton([m
+[31m-                                      style: ElevatedButton.styleFrom([m
+[31m-                                        backgroundColor: Colors.blue,[m
+[31m-                                        shape: RoundedRectangleBorder([m
+[31m-                                          borderRadius: BorderRadius.circular(10),[m
+[31m-                                        ),[m
+[31m-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),[m
+[31m-                                      ),[m
+[31m-                                      onPressed: () {[m
+[31m-                                        // Handle button press[m
+[31m-                                        Navigator.push([m
+[31m-                                          context,[m
+[31m-                                          MaterialPageRoute([m
+[31m-                                            builder: (context) => AlokasiPage(alokasi : alokasi),[m
+[31m-                                          )[m
+[31m-                                        );[m
+[31m-                                      },[m
+[31m-                                      child: Row([m
+[31m-                                        mainAxisSize: MainAxisSize.min,[m
+[31m-                                        children: const [[m
+[31m-                                          Icon(Icons.details, color: Colors.white),[m
+[31m-                                          SizedBox(width: 8),[m
+[31m-                                          Text([m
+[31m-                                            'Detail',[m
+[31m-                                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+[31m-                                          ),[m
+[31m-                                        ],[m
+[32m+[m[32m                            ),[m
+[32m+[m[32m                          ],[m
+[32m+[m[32m                          rows: DataAlokasi.map((alokasi) {[m
+[32m+[m[32m                            return DataRow([m
+[32m+[m[32m                              cells: [[m
+[32m+[m[32m                                DataCell(Text(alokasi.idAlokasi)),[m
+[32m+[m[32m                                DataCell(Text(alokasi.namaProdi)),[m
+[32m+[m[32m                                DataCell(Text(alokasi.status)),[m
+[32m+[m[32m                                DataCell([m
+[32m+[m[32m                                  ElevatedButton([m
+[32m+[m[32m                                    style: ElevatedButton.styleFrom([m
+[32m+[m[32m                                      backgroundColor: Colors.blue,[m
+[32m+[m[32m                                      shape: RoundedRectangleBorder([m
+[32m+[m[32m                                        borderRadius: BorderRadius.circular(10),[m
+                                       ),[m
+[32m+[m[32m                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),[m
+[32m+[m[32m                                    ),[m
+[32m+[m[32m                                    onPressed: () {[m
+[32m+[m[32m                                      // Handle button press[m
+[32m+[m[32m                                      Navigator.push([m
+[32m+[m[32m                                        context,[m
+[32m+[m[32m                                        MaterialPageRoute([m
+[32m+[m[32m                                          builder: (context) => AlokasiPage(alokasi : alokasi),[m
+[32m+[m[32m                                        )[m
+[32m+[m[32m                                      );[m
+[32m+[m[32m                                    },[m
+[32m+[m[32m                                    child: Row([m
+[32m+[m[32m                                      mainAxisSize: MainAxisSize.min,[m
+[32m+[m[32m                                      children: const [[m
+[32m+[m[32m                                        Icon(Icons.details, color: Colors.white),[m
+[32m+[m[32m                                        SizedBox(width: 8),[m
+[32m+[m[32m                                        Text([m
+[32m+[m[32m                                          'Detail',[m
+[32m+[m[32m                                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+[32m+[m[32m                                        ),[m
+[32m+[m[32m                                      ],[m
+                                     ),[m
+                                   ),[m
+[31m-                                ],[m
+[31m-                              );[m
+[31m-                            }).toList(),[m
+[31m-                          ),[m
+[32m+[m[32m                                ),[m
+[32m+[m[32m                              ],[m
+[32m+[m[32m                            );[m
+[32m+[m[32m                          }).toList(),[m
+                         ),[m
+[31m-                      ),),[m
+[32m+[m[32m                      ),[m
+[32m+[m[32m                    ),[m
+               ],[m
+             ),[m
+         ),[m
+[1mdiff --git a/frontend/siris/lib/BA/indexBA.dart b/frontend/siris/lib/BA/indexBA.dart[m
+[1mindex 2f92826..fc96a67 100644[m
+[1m--- a/frontend/siris/lib/BA/indexBA.dart[m
+[1m+++ b/frontend/siris/lib/BA/indexBA.dart[m
+[36m@@ -1,4 +1,5 @@[m
+ export 'package:siris/BA/BA_add_ruang_single.dart';[m
+ export 'package:siris/BA/BA_add_ruang.dart';[m
+ export 'package:siris/BA/BA_edit_ruang_page.dart';[m
+[31m-export 'package:siris/BA/BA_list_ruang_page.dart';[m
+\ No newline at end of file[m
+[32m+[m[32mexport 'package:siris/BA/BA_list_ruang_page.dart';[m
+[32m+[m[32mexport 'package:siris/BA/BA_list_alokasi_page.dart';[m
+\ No newline at end of file[m
+[1mdiff --git a/frontend/siris/lib/class/Jadwal.dart b/frontend/siris/lib/class/Jadwal.dart[m
+[1mindex 048a4c3..825ce56 100644[m
+[1m--- a/frontend/siris/lib/class/Jadwal.dart[m
+[1m+++ b/frontend/siris/lib/class/Jadwal.dart[m
+[36m@@ -1,4 +1,5 @@[m
+ class Jadwal {[m
+[32m+[m[32m  final String idJadwal;[m
+   final String KodeMK;[m
+   final String NamaMK;[m
+   final String Ruangan;[m
+[36m@@ -10,6 +11,7 @@[m [mclass Jadwal {[m
+   final List<String> DosenPengampu;[m
+ [m
+   Jadwal({[m
+[32m+[m[32m    required this.idJadwal,[m
+     required this.KodeMK,[m
+     required this.NamaMK,[m
+     required this.Ruangan,[m
+[36m@@ -20,4 +22,20 @@[m [mclass Jadwal {[m
+     required this.SKS,[m
+     required this.DosenPengampu[m
+   });[m
+[31m-}[m
+\ No newline at end of file[m
+[32m+[m
+[32m+[m[32m  factory Jadwal.fromJson(Map<String, dynamic> json) {[m
+[32m+[m[32m    return Jadwal([m
+[32m+[m[32m      idJadwal: json['id_jadwal'],[m
+[32m+[m[32m      KodeMK: json['kode_mk'],[m
+[32m+[m[32m      NamaMK: json['nama_mk'],[m
+[32m+[m[32m      Ruangan: json['kode_ruangan'],[m
+[32m+[m[32m      Hari: json['hari'],[m
+[32m+[m[32m      JamMulai: json['jam_mulai'],[m
+[32m+[m[32m      JamSelesai: json['jam_selesai'],[m
+[32m+[m[32m      Kelas: json['kelas'],[m
+[32m+[m[32m      SKS: json['sks'],[m
+[32m+[m[32m      DosenPengampu: List<String>.from(json['dosen_pengampu']),[m
+[32m+[m[32m    );[m
+[32m+[m[32m  }[m
+[32m+[m[32m}[m
+[41m+[m
+[1mdiff --git a/frontend/siris/lib/class/JadwalIRS.dart b/frontend/siris/lib/class/JadwalIRS.dart[m
+[1mindex a94a778..4f1d0c9 100644[m
+[1m--- a/frontend/siris/lib/class/JadwalIRS.dart[m
+[1m+++ b/frontend/siris/lib/class/JadwalIRS.dart[m
+[36m@@ -3,6 +3,7 @@[m [mclass JadwalIRS extends Jadwal {[m
+   final String status;[m
+ [m
+   JadwalIRS({[m
+[32m+[m[32m    required super.idJadwal,[m
+     required super.KodeMK,[m
+     required super.NamaMK,[m
+     required super.Ruangan,[m
+[36m@@ -17,6 +18,7 @@[m [mclass JadwalIRS extends Jadwal {[m
+ [m
+   factory JadwalIRS.fromJson(Map<String, dynamic> json) {[m
+     return JadwalIRS([m
+[32m+[m[32m      idJadwal: json['id_jadwal'],[m
+       KodeMK: json['kode_mk'],[m
+       NamaMK: json['nama_mk'],[m
+       Ruangan: json['kode_ruangan'],[m
+[1mdiff --git a/frontend/siris/lib/class/JadwalProdi.dart b/frontend/siris/lib/class/JadwalProdi.dart[m
+[1mindex 5e048fd..56a2227 100644[m
+[1m--- a/frontend/siris/lib/class/JadwalProdi.dart[m
+[1m+++ b/frontend/siris/lib/class/JadwalProdi.dart[m
+[36m@@ -1,21 +1,22 @@[m
+[31m-import 'package:siris/class/Jadwal.dart';[m
+[31m-[m
+ class JadwalProdi {[m
+[32m+[m[32m  final String idJadwal;[m
+   final String namaProdi;[m
+[31m-  final List<Jadwal> jadwals;[m
+[32m+[m[32m  final String idSem;[m
+   final String status; // Status persetujuan[m
+ [m
+   JadwalProdi({[m
+[32m+[m[32m    required this.idJadwal,[m
+     required this.namaProdi,[m
+[31m-    required this.jadwals,[m
+[32m+[m[32m    required this.idSem,[m
+     required this.status,[m
+   });[m
+ [m
+   factory JadwalProdi.fromJson(Map<String, dynamic> json) {[m
+     return JadwalProdi([m
+[31m-      namaProdi: json['kode_mk'],[m
+[31m-      jadwals: json['nama_mk'],[m
+[31m-      status: json['kode_ruangan'],[m
+[32m+[m[32m      idJadwal: json['id_jadwal_prodi'],[m
+[32m+[m[32m      namaProdi: json['nama_prodi'],[m
+[32m+[m[32m      idSem: json['idsem'],[m
+[32m+[m[32m      status: json['status'],[m
+     );[m
+   }[m
+ }[m
+\ No newline at end of file[m
+[1mdiff --git a/frontend/siris/lib/class/indexClass.dart b/frontend/siris/lib/class/indexClass.dart[m
+[1mindex 8497499..eceeb0e 100644[m
+[1m--- a/frontend/siris/lib/class/indexClass.dart[m
+[1m+++ b/frontend/siris/lib/class/indexClass.dart[m
+[36m@@ -1,4 +1,5 @@[m
+ export 'package:siris/class/Jadwal.dart';[m
+ export 'package:siris/class/JadwalIRS.dart';[m
+ export 'package:siris/class/JadwalProdi.dart';[m
+[31m-export 'package:siris/class/Ruang.dart';[m
+\ No newline at end of file[m
+[32m+[m[32mexport 'package:siris/class/Ruang.dart';[m
+[32m+[m[32mexport 'package:siris/class/alokasiRuang.dart';[m
+[1mdiff --git a/frontend/siris/lib/dashboard.dart b/frontend/siris/lib/dashboard.dart[m
+[1mindex d64f06d..2de9bdc 100644[m
+[1m--- a/frontend/siris/lib/dashboard.dart[m
+[1m+++ b/frontend/siris/lib/dashboard.dart[m
+[36m@@ -27,7 +27,7 @@[m [mclass DashboardState extends State<Dashboard> {[m
+         return _dashboardDekan(context);[m
+       case "Kaprodi":[m
+         return _dashboardKaprodi(context);[m
+[31m-      case "Baka":[m
+[32m+[m[32m      case "Bagian Akademik":[m
+         return _dashboardBaka(context);[m
+       default:[m
+         loggerDashboard.warning("Role hasn't been set");[m
+[36m@@ -145,11 +145,83 @@[m [mclass DashboardState extends State<Dashboard> {[m
+     );[m
+   }[m
+ [m
+[31m-  Widget _dashboardDosen(BuildContext context){[m
+[31m-    return Container();[m
+[32m+[m[32m  Widget _dashboardDekan(BuildContext context){[m
+[32m+[m[32m    return Row([m
+[32m+[m[32m      children: [[m
+[32m+[m[32m        Flexible([m
+[32m+[m[32m          flex: 2,[m
+[32m+[m[32m          fit: FlexFit.tight,[m
+[32m+[m[32m          child: Container([m
+[32m+[m[32m            color: Colors.black,[m
+[32m+[m[32m            child: Text("Test"),[m
+[32m+[m[32m          ),[m
+[32m+[m[32m        ),[m
+[32m+[m[32m        Flexible([m
+[32m+[m[32m          flex: 2,[m
+[32m+[m[32m          fit: FlexFit.tight,[m
+[32m+[m[32m          child: Expanded([m
+[32m+[m[32m            child:Row([m
+[32m+[m[32m              children: [[m
+[32m+[m[32m                Container([m
+[32m+[m[32m                  margin: const EdgeInsets.all(4.0),[m
+[32m+[m[32m                  padding: const EdgeInsets.all(4.0),[m
+[32m+[m[32m                  decoration: const BoxDecoration([m
+[32m+[m[32m                    borderRadius: BorderRadius.all(Radius.circular(10)),[m
+[32m+[m[32m                    color: Color(0xFF00549C)[m
+[32m+[m[32m                  ),[m
+[32m+[m[32m                  child: GestureDetector([m
+[32m+[m[32m                    onTap: () => Navigator.pushNamed(context, '/dekan/ruang/', arguments: userData),[m
+[32m+[m[32m                    child: Column([m
+[32m+[m[32m                      children: [[m
+[32m+[m[32m                        Icon(Icons.room, color: Colors.white),[m
+[32m+[m[32m                        const SizedBox(width: 5),[m
+[32m+[m[32m                        Text("Ruangan", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),)[m
+[32m+[m[32m                      ][m
+[32m+[m[32m                    ),[m
+[32m+[m[32m                  ),[m
+[32m+[m[32m                ),[m
+[32m+[m[32m                Container([m
+[32m+[m[32m                  margin: const EdgeInsets.all(4.0),[m
+[32m+[m[32m                  padding: const EdgeInsets.all(4.0),[m
+[32m+[m[32m                  decoration: const BoxDecoration([m
+[32m+[m[32m                    borderRadius: BorderRadius.all(Radius.circular(10)),[m
+[32m+[m[32m                    color: Color(0xFF00549C)[m
+[32m+[m[32m                  ),[m
+[32m+[m[32m                  child: SizedBox([m
+[32m+[m[32m                    width: 300,[m
+[32m+[m[32m                    height: 300,[m
+[32m+[m[32m                    child: ElevatedButton([m
+[32m+[m[32m                      onPressed: () => Navigator.pushNamed(context, '/dekan/jadwal/', arguments: userData),[m
+[32m+[m[32m                      child: Column([m
+[32m+[m[32m                        children: [[m
+[32m+[m[32m                          Icon(Icons.schedule, color: Colors.white),[m
+[32m+[m[32m                          const SizedBox(width: 5),[m
+[32m+[m[32m                          Text("Jadwal", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),)[m
+[32m+[m[32m                        ][m
+[32m+[m[32m                      ),[m
+[32m+[m[32m                    ),[m
+[32m+[m[32m                  )[m
+[32m+[m[32m                )[m[41m  [m
+[32m+[m[32m              ],[m
+[32m+[m[32m            )[m
+[32m+[m[32m          ),[m
+[32m+[m[32m        )[m
+[32m+[m[32m      ],[m
+[32m+[m[32m    );[m
+[32m+[m[41m    [m
+[32m+[m[32m    // return Row([m
+[32m+[m[32m    //   children: [[m
+[32m+[m[32m    //     _buildMenuItem(Icons.schedule, "Jadwal", onTap: () {[m
+[32m+[m[32m    //       Navigator.pushNamed(context, '/dekan/jadwal/', arguments: userData);[m
+[32m+[m[32m    //     }),[m
+[32m+[m[32m    //     _buildMenuItem(Icons.room, "Ruang", onTap: () {[m
+[32m+[m[32m    //       Navigator.pushNamed(context, '/dekan/ruang/', arguments: userData);[m
+[32m+[m[32m    //     }),[m
+[32m+[m[32m    //   ][m
+[32m+[m[32m    // );[m
+   }[m
+ [m
+[31m-  Widget _dashboardDekan(BuildContext context){[m
+[32m+[m[32m  Widget _dashboardDosen(BuildContext context){[m
+     return Container();[m
+   }[m
+ [m
+[36m@@ -209,43 +281,49 @@[m [mclass DashboardState extends State<Dashboard> {[m
+                       crossAxisAlignment: CrossAxisAlignment.start,[m
+                       mainAxisAlignment: MainAxisAlignment.center,[m
+                       children: [[m
+[31m-                        Text([m
+[32m+[m[32m                        Flexible([m
+[32m+[m[32m                          flex: 1,[m
+[32m+[m[32m                          fit: FlexFit.tight,[m
+[32m+[m[32m                          child: Text([m
+                           'Hi, ${userData['name']}',[m
+                           style: const TextStyle([m
+                             fontSize: 24,[m
+                             fontWeight: FontWeight.bold,[m
+                             color: Colors.white,[m
+                           ),[m
+[32m+[m[32m                                                    )[m
+                         ),[m
+[31m-                        const SizedBox(height: 8),[m
+[31m-                        Row([m
+[31m-                          children: [[m
+[31m-                            Text([m
+[31m-                              '${userData['identifier']}',[m
+[31m-                              style: const TextStyle([m
+[31m-                                fontSize: 16,[m
+[31m-                                color: Colors.white,[m
+[31m-                              ),[m
+[31m-                            ),[m
+[31m-                            const Padding([m
+[31m-                              padding: EdgeInsets.symmetric(horizontal: 8.0),[m
+[31m-                              child: Text([m
+[31m-                                '|',[m
+[31m-                                style: TextStyle([m
+[32m+[m[32m                        Flexible([m
+[32m+[m[32m                          flex: 2,[m
+[32m+[m[32m                          child: Row([m
+[32m+[m[32m                            children: [[m
+[32m+[m[32m                              Text([m
+[32m+[m[32m                                '${userData['identifier']}',[m
+[32m+[m[32m                                style: const TextStyle([m
+[32m+[m[32m                                  fontSize: 16,[m
+                                   color: Colors.white,[m
+[31m-                                  fontSize: 20,[m
+                                 ),[m
+                               ),[m
+[31m-                            ),[m
+[31m-                            Text([m
+[31m-                              '${userData['jurusan'] ?? userData['departemen']}',[m
+[31m-                              style: const TextStyle([m
+[31m-                                fontSize: 16,[m
+[31m-                                color: Colors.white,[m
+[32m+[m[32m                              const Padding([m
+[32m+[m[32m                                padding: EdgeInsets.symmetric(horizontal: 8.0),[m
+[32m+[m[32m                                child: Text([m
+[32m+[m[32m                                  '|',[m
+[32m+[m[32m                                  style: TextStyle([m
+[32m+[m[32m                                    color: Colors.white,[m
+[32m+[m[32m                                    fontSize: 20,[m
+[32m+[m[32m                                  ),[m
+[32m+[m[32m                                ),[m
+                               ),[m
+[31m-                            )[m
+[31m-                          ],[m
+[31m-                        )[m
+[32m+[m[32m                              Text([m
+[32m+[m[32m                                '${userData['jurusan'] ?? userData['departemen']}',[m
+[32m+[m[32m                                style: const TextStyle([m
+[32m+[m[32m                                  fontSize: 16,[m
+[32m+[m[32m                                  color: Colors.white,[m
+[32m+[m[32m                                ),[m
+[32m+[m[32m                              )[m
+[32m+[m[32m                            ],[m
+[32m+[m[32m                          )[m
+[32m+[m[32m                        ),[m
+                       ],[m
+                     ),[m
+                   ),[m
+[36m@@ -268,13 +346,31 @@[m [mclass DashboardState extends State<Dashboard> {[m
+                   ),[m
+                 ],[m
+               ),[m
+[31m-              child: _buildStatusMahasiswa(userData['currentLoginAs'])[m
+[32m+[m[32m              child: _buildStatus(userData['currentLoginAs'])[m
+             ),[m
+           ],[m
+         ));[m
+   }[m
+ [m
+[31m-  Widget _buildStatusMahasiswa(String role){[m
+[32m+[m[32m    Widget _buildMenuItem(IconData icon, String label, {required VoidCallback onTap}) {[m
+[32m+[m[32m    return Row([m
+[32m+[m[32m      children: [[m
+[32m+[m[32m        GestureDetector([m
+[32m+[m[32m          onTap: onTap,[m
+[32m+[m[32m          child: Row([m
+[32m+[m[32m            children: [[m
+[32m+[m[32m              Icon(icon, color: Colors.black),[m
+[32m+[m[32m              const SizedBox(width: 4),[m
+[32m+[m[32m              Text(label, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 18)),[m
+[32m+[m[32m              const SizedBox(width: 16),[m
+[32m+[m[32m            ],[m
+[32m+[m[32m          )[m[41m [m
+[32m+[m[32m        ),[m
+[32m+[m[32m      ][m
+[32m+[m[32m    );[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  Widget _buildStatus(String role){[m
+     if(role == "Mahasiswa"){[m
+       return Row([m
+         mainAxisAlignment: MainAxisAlignment.spaceAround,[m
+[1mdiff --git a/frontend/siris/lib/dekan/jadwal_page.dart b/frontend/siris/lib/dekan/jadwal_page.dart[m
+[1mindex 7fe9a82..2e728af 100644[m
+[1m--- a/frontend/siris/lib/dekan/jadwal_page.dart[m
+[1m+++ b/frontend/siris/lib/dekan/jadwal_page.dart[m
+[36m@@ -1,11 +1,14 @@[m
+ import 'dart:convert';[m
+[31m-import 'package:siris/class/Jadwal.dart';[m
+[32m+[m[32mimport 'dart:io';[m
+ import 'package:flutter/material.dart';[m
+ import 'package:logging/logging.dart';[m
+ import 'package:http/http.dart' as http;[m
+[32m+[m[32mimport 'package:siris/dekan/detail_jadwal_page.dart';[m
+[32m+[m[32mimport 'package:siris/navbar.dart';[m
+[32m+[m[32mimport '../class/indexClass.dart';[m
+ [m
+ [m
+[31m-final loggerJadwal = Logger('jadwalPage');[m
+[32m+[m[32mfinal loggerJadwal = Logger('JadwalPage');[m
+ [m
+ class JadwalPage extends StatefulWidget {[m
+   final Map<String, dynamic> userData;[m
+[36m@@ -17,30 +20,340 @@[m [mclass JadwalPage extends StatefulWidget {[m
+ }[m
+ [m
+ class JadwalPageState extends State<JadwalPage> {[m
+[31m-  String? semester;[m
+[31m-  List<Jadwal> jadwalProdi = [];[m
+[32m+[m[32m  String? selectedSemester;[m
+[32m+[m[32m  List<String> idsemPosisiList = [];[m
+[32m+[m[32m  List<JadwalProdi> jadwalProdi = [];[m
+   get userData => widget.userData;[m
+ [m
+   @override[m
+   void initState(){[m
+     super.initState();[m
+[31m-    semester = '20241';[m
+[31m-    fetchJadwalProdi(semester!);[m
+[32m+[m[32m    fetchIdsemPosisi();[m
+   }[m
+ [m
+[31m-  Future<void> fetchJadwalProdi(String semester) async {[m
+[31m-    final url = 'http://localhost:8080/jadwalProdi/$semester';[m
+[31m-    loggerJadwal.info("Fetching jadwal prodi: $semester");[m
+[32m+[m[32m  // Function to fetch idsem and posisi data from the backend[m
+[32m+[m[32m  Future<void> fetchIdsemPosisi() async {[m
+[32m+[m[32m    final response = await http.get(Uri.parse('http://localhost:8080/semester')); // Replace with your actual API URL[m
+ [m
+[31m-    final response = await http.get(Uri.parse(url));[m
+[31m-    if (response.statusCode == 200){[m
+[32m+[m[32m    if (response.statusCode == 200) {[m
+       final List<dynamic> data = json.decode(response.body);[m
+[32m+[m[32m      setState(() {[m
+[32m+[m[32m        idsemPosisiList = data.map((item) => '${item['idsem']} - ${item['posisi']}').toList();[m
+[32m+[m[32m        if (idsemPosisiList.isNotEmpty) {[m
+[32m+[m[32m          selectedSemester = idsemPosisiList.last;  // Set default selection after data is loaded[m
+[32m+[m[32m          String? idsem = selectedSemester?.split(' - ')[0];  // Extract idsem[m
+[32m+[m[32m          if (idsem != null) {[m
+[32m+[m[32m            fetchJadwalProdi(idsem); // Trigger the fetch immediately after setting selectedSemester[m
+[32m+[m[32m          }[m
+[32m+[m[32m        }[m
+[32m+[m[32m      });[m
+[32m+[m[32m    } else {[m
+[32m+[m[32m      throw Exception('Failed to load idsem and posisi');[m
+     }[m
+   }[m
+[32m+[m
+[32m+[m[32mFuture<void> fetchJadwalProdi(String idsem) async {[m
+[32m+[m[32m  final url = 'http://localhost:8080/dekan/jadwal/$idsem';[m
+[32m+[m[32m  loggerJadwal.info("Fetching jadwal prodi for semester: $idsem, URL: $url");[m
+[32m+[m
+[32m+[m[32m  try {[m
+[32m+[m[32m    final response = await http.get(Uri.parse(url));[m
+[32m+[m
+[32m+[m[32m    if (response.statusCode == 200) {[m
+[32m+[m[32m      final Map<String, dynamic> data = json.decode(response.body);[m
+[32m+[m
+[32m+[m[32m      // Iterate over all prodi keys dynamically[m
+[32m+[m[32m      setState(() {[m
+[32m+[m[32m        jadwalProdi.clear();  // Clear previous data[m
+[32m+[m[32m        data.forEach((prodi, jadwalList) {[m
+[32m+[m[32m          if (jadwalList is List) {[m
+[32m+[m[32m            // Assuming the list contains the jadwal data, map it[m
+[32m+[m[32m            jadwalProdi.addAll([m
+[32m+[m[32m              jadwalList.map((item) => JadwalProdi.fromJson(item)).toList(),[m
+[32m+[m[32m            );[m
+[32m+[m[32m          }[m
+[32m+[m[32m        });[m
+[32m+[m[32m      });[m
+[32m+[m[41m  [m
+[32m+[m[32m      loggerJadwal.info("Status Code: ${response.statusCode}, jadwal fetched successfully.");[m
+[32m+[m[32m    } else {[m
+[32m+[m[32m      loggerJadwal.warning([m
+[32m+[m[32m        "Failed to fetch jadwal. Status Code: ${response.statusCode}, Response: ${response.body}"[m
+[32m+[m[32m      );[m
+[32m+[m[32m    }[m
+[32m+[m[32m  } on FormatException catch (e) {[m
+[32m+[m[32m    loggerJadwal.severe("Invalid JSON format: $e");[m
+[32m+[m[32m  } on SocketException catch (e) {[m
+[32m+[m[32m    loggerJadwal.severe("Network error: $e");[m
+[32m+[m[32m  } catch (e) {[m
+[32m+[m[32m    loggerJadwal.severe("Unexpected error: $e");[m
+[32m+[m[32m  }[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m
+   [m
+   @override[m
+   Widget build(BuildContext context) {[m
+[31m-    // TODO: implement build[m
+[31m-    throw UnimplementedError();[m
+[32m+[m[32m    return Scaffold([m
+[32m+[m[32m      appBar: Navbar(userData: userData),[m
+[32m+[m[32m      body: Scaffold([m
+[32m+[m[32m        body: Container([m
+[32m+[m[32m          padding: EdgeInsets.symmetric(horizontal: 40),[m
+[32m+[m[32m          color: Colors.grey[200],[m
+[32m+[m[32m          child: Container([m
+[32m+[m[32m            padding: EdgeInsets.symmetric(horizontal: 40),[m
+[32m+[m[32m            margin: EdgeInsets.symmetric(vertical: 40),[m
+[32m+[m[32m            color: Colors.white,[m
+[32m+[m[32m            child: Column([m
+[32m+[m[32m              children: [[m
+[32m+[m[32m                Container([m
+[32m+[m[32m                  margin: EdgeInsets.only(top: 32, bottom: 40),[m
+[32m+[m[32m                  child: Text([m
+[32m+[m[32m                            'Daftar Jadwal Prodi',[m
+[32m+[m[32m                            style: TextStyle([m
+[32m+[m[32m                              fontSize: 32,[m
+[32m+[m[32m                              fontWeight: FontWeight.bold[m
+[32m+[m[32m                            ),[m
+[32m+[m[32m                          )[m
+[32m+[m[32m                ),[m
+[32m+[m[32m                Container([m
+[32m+[m[32m                  padding: const EdgeInsets.symmetric(vertical: 16),[m
+[32m+[m[32m                  child: Row(mainAxisAlignment: MainAxisAlignment.center,[m
+[32m+[m[32m                  children: [[m
+[32m+[m[32m                    idsemPosisiList.isEmpty[m
+[32m+[m[32m                      ? const CircularProgressIndicator()[m
+[32m+[m[32m                      : DropdownButton<String>([m
+[32m+[m[32m                          value: selectedSemester,[m
+[32m+[m[32m                          onChanged: (String? newSemester) {[m
+[32m+[m[32m                            setState(() {[m
+[32m+[m[32m                              selectedSemester = newSemester;[m
+[32m+[m[32m                              String? idsem = selectedSemester?.split(' - ')[0];[m
+[32m+[m[32m                              loggerJadwal.info(idsem);[m
+[32m+[m[32m                              if(idsem != null){[m
+[32m+[m[32m                                fetchJadwalProdi(idsem);[m
+[32m+[m[32m                              }[m
+[32m+[m[32m                              else{[m
+[32m+[m[32m                                debugPrintStack();[m
+[32m+[m[32m                              }[m
+[32m+[m[32m                            });[m
+[32m+[m[32m                          },[m
+[32m+[m[32m                          items: idsemPosisiList.map<DropdownMenuItem<String>>((String value) {[m
+[32m+[m[32m                            return DropdownMenuItem<String>([m
+[32m+[m[32m                              value: value,[m
+[32m+[m[32m                              child: Text(value.split(" - ")[1]),[m
+[32m+[m[32m                            );[m
+[32m+[m[32m                          }).toList(),[m
+[32m+[m[32m                      ),[m
+[32m+[m[32m                    ],[m
+[32m+[m[32m                  ),[m
+[32m+[m[32m                ),[m
+[32m+[m[32m                SingleChildScrollView([m
+[32m+[m[32m                  child: ConstrainedBox([m
+[32m+[m[32m                    constraints: BoxConstraints(minWidth: MediaQuery.of(context).size.width),[m
+[32m+[m[32m                    child: PaginatedDataTable([m
+[32m+[m[32m                      columnSpacing: 16.0,[m
+[32m+[m[32m                      headingRowColor: WidgetStateProperty.resolveWith([m
+[32m+[m[32m                        (states) => const Color(0xFF162953),[m
+[32m+[m[32m                      ),[m
+[32m+[m[32m                      columns: const [[m
+[32m+[m[32m                        DataColumn([m
+[32m+[m[32m                          label: Text([m
+[32m+[m[32m                            'Id Jadwal',[m
+[32m+[m[32m                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+[32m+[m[32m                          ),[m
+[32m+[m[32m                        ),[m
+[32m+[m[32m                        DataColumn([m
+[32m+[m[32m                          label: Text([m
+[32m+[m[32m                            'Program Studi',[m
+[32m+[m[32m                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+[32m+[m[32m                          ),[m
+[32m+[m[32m                        ),[m
+[32m+[m[32m                        DataColumn([m
+[32m+[m[32m                          label: Text([m
+[32m+[m[32m                            'Status',[m
+[32m+[m[32m                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+[32m+[m[32m                          ),[m
+[32m+[m[32m                        ),[m
+[32m+[m[32m                        DataColumn([m
+[32m+[m[32m                          label: Text([m
+[32m+[m[32m                            ' ',[m
+[32m+[m[32m                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),[m
+[32m+[m[32m                          ),[m
+[32m+[m[32m                        ),[m
+[32m+[m[32m                      ],[m
+[32m+[m[32m                        source: JadwalDataSource([m
+[32m+[m[32m                                  jadwalProdi,[m
+[32m+[m[32m                                  (idJadwal, idsem) => approveJadwal(context, idJadwal, idsem),[m
+[32m+[m[32m                                  (idJadwal) => Navigator.push(context, MaterialPageRoute([m
+[32m+[m[32m                                    builder:  (context) => DetailJadwalPage([m
+[32m+[m[32m                                                            userData: userData, idJadwalProdi: idJadwal)))[m
+[32m+[m[32m                                )[m
+[32m+[m[32m                    ),[m
+[32m+[m[32m                  ),[m
+[32m+[m[32m                ),[m
+[32m+[m[32m              ],[m
+[32m+[m[32m            )[m
+[32m+[m[32m          ),[m
+[32m+[m[32m        ),[m
+[32m+[m[32m      )[m
+[32m+[m[32m    );[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  Future<void> approveJadwal(BuildContext context, String idJadwal, String idsem) async {[m
+[32m+[m[32m    final url = "http://localhost:8080/dekan/jadwal/approve/$idJadwal";[m
+[32m+[m[32m    loggerJadwal.info("Sending request to URL: $url");[m
+[32m+[m
+[32m+[m[32m    try {[m
+[32m+[m[32m      final response = await http.put(Uri.parse(url));[m
+[32m+[m[32m      if (response.statusCode == 200) {[m
+[32m+[m[32m        loggerJadwal.info("Jadwal with ID $idJadwal approved successfully.");[m
+[32m+[m[32m        fetchJadwalProdi(idsem);[m
+[32m+[m[32m        // Tampilkan dialog keberhasilan[m
+[32m+[m[32m        showDialog([m
+[32m+[m[32m          context: context,[m
+[32m+[m[32m          builder: (context) => AlertDialog([m
+[32m+[m[32m            title: const Text('Berhasil'),[m
+[32m+[m[32m            content: const Text('Jadwal berhasil disetujui.'),[m
+[32m+[m[32m            actions: [[m
+[32m+[m[32m              TextButton([m
+[32m+[m[32m                onPressed: () => Navigator.of(context).pop(),[m
+[32m+[m[32m                child: const Text('OK'),[m
+[32m+[m[32m              ),[m
+[32m+[m[32m            ],[m
+[32m+[m[32m          ),[m
+[32m+[m[32m        );[m
+[32m+[m[32m      }[m[41m [m
+[32m+[m[32m      else {[m
+[32m+[m[32m        loggerJadwal.warning([m
+[32m+[m[32m            "Failed to approve jadwal. Status Code: ${response.statusCode}, Response: ${response.body}");[m
+[32m+[m
+[32m+[m[32m        // Tampilkan dialog error[m
+[32m+[m[32m        showDialog([m
+[32m+[m[32m          context: context,[m
+[32m+[m[32m          builder: (context) => AlertDialog([m
+[32m+[m[32m            title: const Text('Gagal'),[m
+[32m+[m[32m            content: Text([m
+[32m+[m[32m                'Gagal menyetujui jadwal. Status Code: ${response.statusCode}'),[m
+[32m+[m[32m            actions: [[m
+[32m+[m[32m              TextButton([m
+[32m+[m[32m                onPressed: () => Navigator.of(context).pop(),[m
+[32m+[m[32m                child: const Text('OK'),[m
+[32m+[m[32m              ),[m
+[32m+[m[32m            ],[m
+[32m+[m[32m          ),[m
+[32m+[m[32m        );[m
+[32m+[m[32m      }[m
+[32m+[m[32m    } on FormatException catch (e) {[m
+[32m+[m[32m      loggerJadwal.severe("Invalid JSON format: $e");[m
+[32m+[m[32m      showDialog([m
+[32m+[m[32m        context: context,[m
+[32m+[m[32m        builder: (context) => AlertDialog([m
+[32m+[m[32m          title: const Text('Error'),[m
+[32m+[m[32m          content: const Text('Format data tidak valid.'),[m
+[32m+[m[32m          actions: [[m
+[32m+[m[32m            TextButton([m
+[32m+[m[32m              onPressed: () => Navigator.of(context).pop(),[m
+[32m+[m[32m              child: const Text('OK'),[m
+[32m+[m[32m            ),[m
+[32m+[m[32m          ],[m
+[32m+[m[32m        ),[m
+[32m+[m[32m      );[m
+[32m+[m[32m    } on SocketException catch (e) {[m
+[32m+[m[32m      loggerJadwal.severe("Network error: $e");[m
+[32m+[m[32m      showDialog([m
+[32m+[m[32m        context: context,[m
+[32m+[m[32m        builder: (context) => AlertDialog([m
+[32m+[m[32m          title: const Text('Koneksi Bermasalah'),[m
+[32m+[m[32m          content: const Text('Tidak dapat terhubung ke server.'),[m
+[32m+[m[32m          actions: [[m
+[32m+[m[32m            TextButton([m
+[32m+[m[32m              onPressed: () => Navigator.of(context).pop(),[m
+[32m+[m[32m              child: const Text('OK'),[m
+[32m+[m[32m            ),[m
+[32m+[m[32m          ],[m
+[32m+[m[32m        ),[m
+[32m+[m[32m      );[m
+[32m+[m[32m    } catch (e) {[m
+[32m+[m[32m      loggerJadwal.severe("Unexpected error: $e");[m
+[32m+[m[32m      showDialog([m
+[32m+[m[32m        context: context,[m
+[32m+[m[32m        builder: (context) => AlertDialog([m
+[32m+[m[32m          title: const Text('Error'),[m
+[32m+[m[32m          content: const Text('Terjadi kesalahan tak terduga.'),[m
+[32m+[m[32m          actions: [[m
+[32m+[m[32m            TextButton([m
+[32m+[m[32m              onPressed: () => Navigator.of(context).pop(),[m
+[32m+[m[32m              child: const Text('OK'),[m
+[32m+[m[32m            ),[m
+[32m+[m[32m          ],[m
+[32m+[m[32m        ),[m
+[32m+[m[32m      );[m
+[32m+[m[32m    }[m
+   }[m
+[31m-}[m
+\ No newline at end of file[m
+[32m+[m
+[32m+[m[32m  Future<Object> detailJadwal(BuildContext context, String idJadwal) async {[m
+[32m+[m[32m    return Navigator.push(context, MaterialPageRoute([m
+[32m+[m[32m                                    builder:  (context) => DetailJadwalPage([m
+[32m+[m[32m                                                            userData: userData, idJadwalProdi: idJadwal)));[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m}[m
+[32m+[m
+[32m+[m[32mclass JadwalDataSource extends DataTableSource {[m
+[32m+[m[32m  final List<JadwalProdi> jadwalProdi;[m
+[32m+[m[32m  final void Function(String idJadwal, String idsem) onApproveJadwal; // Callback untuk persetujuan[m
+[32m+[m[32m  final Function(String idJadwal) detailJadwal;[m
+[32m+[m
+[32m+[m[32m  JadwalDataSource(this.jadwalProdi, this.onApproveJadwal, this.detailJadwal);[m
+[32m+[m
+[32m+[m[32m  @override[m
+[32m+[m[32m  DataRow? getRow(int index) {[m
+[32m+[m[32m    if (index >= jadwalProdi.length) return null;[m
+[32m+[m
+[32m+[m[32m    final jadwal = jadwalProdi[index];[m
+[32m+[m[32m    final isDisetujui = jadwal.status.toLowerCase() == "sudah disetujui";[m
+[32m+[m[32m    return DataRow(cells: [[m
+[32m+[m[32m      DataCell(Text(jadwal.idJadwal)),[m
+[32m+[m[32m      DataCell(Text(jadwal.namaProdi)),[m
+[32m+[m[32m      DataCell(Text(jadwal.status)),[m
+[32m+[m[32m      DataCell([m
+[32m+[m[32m        Row([m
+[32m+[m[32m          children: [[m
+[32m+[m[32m            !isDisetujui ?[m
+[32m+[m[32m            Row([m
+[32m+[m[32m              children: [[m
+[32m+[m[32m                ElevatedButton([m
+[32m+[m[32m                  child: const Text('Setujui'),[m
+[32m+[m[32m                  onPressed: () {[m
+[32m+[m[32m                    onApproveJadwal(jadwal.idJadwal, jadwal.idSem); // Memanggil callback saat tombol ditekan[m
+[32m+[m[32m                  },[m
+[32m+[m[32m                ),[m
+[32m+[m[32m                ElevatedButton([m
+[32m+[m[32m                  child: const Text('Detail'),[m
+[32m+[m[32m                  onPressed: () {[m
+[32m+[m[32m                    detailJadwal(jadwal.idJadwal);[m
+[32m+[m[32m                  },[m
+[32m+[m[32m                ),[m
+[32m+[m[32m              ],[m
+[32m+[m[32m            )[m[41m [m
+[32m+[m[32m            : ElevatedButton([m
+[32m+[m[32m                child: const Text('Detail'),[m
+[32m+[m[32m                onPressed: () {[m
+[32m+[m[32m                  detailJadwal(jadwal.idJadwal);[m
+[32m+[m[32m                },[m
+[32m+[m[32m              ),[m
+[32m+[m[32m          ],[m
+[32m+[m[32m        )[m
+[32m+[m[32m      ),[m
+[32m+[m[32m    ]);[m
+[32m+[m[32m  }[m
+[32m+[m
+[32m+[m[32m  @override[m
+[32m+[m[32m  bool get isRowCountApproximate => false;[m
+[32m+[m
+[32m+[m[32m  @override[m
+[32m+[m[32m  int get rowCount => jadwalProdi.length;[m
+[32m+[m
+[32m+[m[32m  @override[m
+[32m+[m[32m  int get selectedRowCount => 0;[m
+[32m+[m[32m}[m
+[1mdiff --git a/frontend/
