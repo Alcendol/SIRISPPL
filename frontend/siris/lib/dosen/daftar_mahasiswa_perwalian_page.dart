@@ -91,10 +91,8 @@ class DaftarMahasiswaPerwalianPageState
 
       // Update mahasiswaList with IRS info
       for (var mahasiswa in fetchedList) {
-        final statusIrs =
-            await fetchIRSInfo(mahasiswa['nim'], mahasiswa['semester']);
-        mahasiswa['status_irs'] =
-            statusIrs; 
+        final statusIrs = await fetchIRSInfo(mahasiswa['nim'], mahasiswa['semester']);
+        mahasiswa['status_irs'] = statusIrs; 
       }
 
       setState(() {

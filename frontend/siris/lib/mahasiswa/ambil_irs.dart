@@ -31,7 +31,9 @@ class AmbilIRSState extends State<AmbilIRS> {
   get userData => widget.userData;
   late int maxSks;
   Map<String, dynamic> irsInfo = {'status_irs': 'Tidak Ada Data'};
-  
+  DateTime targetDate = DateTime(2024, 12, 16);
+  DateTime now = DateTime.now();
+
   String totalSks = '0';
   String ipk = '0.0';
   String ips ='0.0';
@@ -519,10 +521,54 @@ Future<bool?> showAddConfirmationDialog(BuildContext context, String namaMk) {
   );
 }
 
+void showAfterPengisianDialog() {
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text("Sudah lewat batas Penggantian IRS"),
+        content: Text(
+          "Jadwal pada IRS hanya bisa dibatalkan",
+        ),
+        actions: <Widget>[
+          TextButton(
+            child: Text("OK"),
+            onPressed: () {
+              Navigator.of(context).pop(); // Tutup dialog
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
 
+void showAkhirPengisianDialog() {
+  showDialog(
+    context: context,
+    builder: (BuildContext context) {
+      return AlertDialog(
+        title: Text("Sudah lewat batas Pengisian"),
+        content: Text(
+          "Sudah tidak bisa mengubah IRS sama sekali",
+        ),
+        actions: <Widget>[
+          TextButton(
+            child: Text("OK"),
+            onPressed: () {
+              Navigator.of(context).pop(); // Tutup dialog
+            },
+          ),
+        ],
+      );
+    },
+  );
+}
 
   @override
   Widget build(BuildContext context) {
+    Duration difference = now.difference(targetDate);
+    int daysDifference = difference.inDays;
     return Scaffold(
       appBar: Navbar(userData: userData),
       body: Row(
@@ -693,21 +739,23 @@ Future<bool?> showAddConfirmationDialog(BuildContext context, String namaMk) {
                             hint: const Text("Pilih Mata Kuliah"),
                             value: selectedMataKuliah,
                             isExpanded: true,
-                            onChanged: (newValue) {
-                              setState(() {
-                                selectedMataKuliah = newValue;
-                                // jadwalList = []; // Reset jadwal saat mata kuliah diubah
-                                // fetchJadwal(newValue['kode_mk']);
-                              });
-                            },
-                          items: mataKuliahList
-                              .where((mataKuliah) => !selectedMatKul.contains(mataKuliah))
-                              .map<DropdownMenuItem<dynamic>>((mataKuliah) {
-                              return DropdownMenuItem<dynamic>(
-                                value: mataKuliah,
-                                child: Text('${mataKuliah['kode_mk']} - ${mataKuliah['nama_mk']}'),
-                              );
-                            }).toList(),
+                            onChanged: (irsInfo['status_irs'] != 'Disetujui' && daysDifference <= 3 ) // Hanya aktif jika selisih <= 14 hari
+                              ? (newValue) {
+                                  setState(() {
+                                    selectedMataKuliah = newValue;
+                                    // Reset jadwal saat mata kuliah diubah
+                                    // fetchJadwal(newValue['kode_mk']);
+                                  });
+                                }
+                              : null, // Disable dropdown jika lebih dari 2 minggu
+                            items: mataKuliahList
+                                .where((mataKuliah) => !selectedMatKul.contains(mataKuliah))
+                                .map<DropdownMenuItem<dynamic>>((mataKuliah) {
+                                return DropdownMenuItem<dynamic>(
+                                  value: mataKuliah,
+                                  child: Text('${mataKuliah['kode_mk']} - ${mataKuliah['nama_mk']}'),
+                                );
+                              }).toList(),
                           ),
 
                           ElevatedButton(
@@ -837,7 +885,23 @@ Future<bool?> showAddConfirmationDialog(BuildContext context, String namaMk) {
                       )
                   ],
                   ),
-                  const SizedBox(height: 40),
+
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (daysDifference > 3 && daysDifference <= 5) 
+                      Text(
+                          "Tidak bisa menambah jadwal lagi",
+                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
+                      if (daysDifference > 5) 
+                        Text(
+                          "Sudah tidak bisa mengubah IRS lagi",
+                          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
 
                   Padding(
                     padding: const EdgeInsets.all(8.0),
@@ -923,30 +987,42 @@ Future<bool?> showAddConfirmationDialog(BuildContext context, String namaMk) {
                                         Padding(
                                           padding: const EdgeInsets.all(4.0), // Tambahkan padding untuk jarak antar tombol
                                           child: ElevatedButton(
-                                            onPressed: (irsInfo['status_irs'] == 'Disetujui') ? null : () async {
-                                              if (hasConflict) {
-                                                showConflictDialog(jadwal['nama_mk'], jadwal['kode_mk']);
-                                              } else if (status == 'diambil') {
-                                                showDeleteConfirmationDialog(jadwal['kode_mk'], jadwal['jadwal_id']);
-                                              } else {
-                                                final confirm = await showAddConfirmationDialog(context, jadwal['nama_mk']);
-                                                // loggerJadwal.info("Confirmation: ", confirm);
-                                                // loggerJadwal.info("Jadwal: ", jadwal['jadwal_id']);
-                                                if (confirm == true) {
-                                                  final success = await addJadwalToIRS(jadwal['kode_mk'], jadwal['jadwal_id']);
-                                                  loggerJadwal.info(success);
-                                                  if (success) {
-                                                    setState(() async {
-                                                      jadwalMap.clear();
-                                                      await fetchData();
-                                                      await fetchMataKuliah();
-                                                      await fetchIRSJadwal();
-                                                      await fetchDaftarMataKuliah();
-                                                    });
+                                            onPressed: (irsInfo['status_irs'] == 'Disetujui')
+                                              ? null
+                                              : () async {
+                                                  if (daysDifference <= 3) {
+                                                    // Dalam 2 minggu: Bisa tambah atau hapus jadwal
+                                                    if (hasConflict) {
+                                                      showConflictDialog(jadwal['nama_mk'], jadwal['kode_mk']);
+                                                    } else if (status == 'diambil') {
+                                                      showDeleteConfirmationDialog(jadwal['kode_mk'], jadwal['id_jadwal']);
+                                                    } else {
+                                                      final confirm = await showAddConfirmationDialog(context, jadwal['nama_mk']);
+                                                      if (confirm == true) {
+                                                        final success = await addJadwalToIRS(jadwal['kode_mk'], jadwal['jadwal_id']);
+                                                        if (success) {
+                                                          setState(() async {
+                                                            jadwalMap.clear();
+                                                            await fetchData();
+                                                            await fetchMataKuliah();
+                                                            await fetchIRSJadwal();
+                                                            await fetchDaftarMataKuliah();
+                                                          });
+                                                        }
+                                                      }
+                                                    }
+                                                  } else if (daysDifference <= 5) {
+                                                    // Antara minggu ke-2 dan ke-4: Hanya bisa hapus jadwal
+                                                    if (status == 'diambil') {
+                                                      showDeleteConfirmationDialog(jadwal['kode_mk'], jadwal['id_jadwal']);
+                                                    } else {
+                                                      showAfterPengisianDialog();
+                                                    }
+                                                  } else {
+                                                    // Lebih dari 4 minggu: Tombol dinonaktifkan
+                                                    showAkhirPengisianDialog();
                                                   }
-                                                }
-                                              }
-                                            },
+                                                },
                                             style: ElevatedButton.styleFrom(
                                               backgroundColor: (hasConflict 
                                                   ? Colors.red 

@@ -4,7 +4,7 @@ import 'package:siris/navbar.dart';
 import 'package:logging/logging.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-
+import 'package:fl_chart/fl_chart.dart';
 
 final loggerDashboard = Logger('DashboardState');
 
@@ -19,6 +19,7 @@ class Dashboard extends StatefulWidget {
 
 class DashboardState extends State<Dashboard> {
   get userData => widget.userData;
+  List<String> mahasiswaList = [];
   String totalSks = '0';
   String ipk = '0.0';
   SharedPreferences? prefs; 
@@ -29,12 +30,38 @@ class DashboardState extends State<Dashboard> {
     if (userData['currentLoginAs'] == 'Mahasiswa'){
       fetchDataMahasiswa();
     }
+    else{
+      fetchMahasiswaPerwalian();
+    }
   }
 
   Future<void> _loadPrefs() async {
     prefs = await SharedPreferences.getInstance();
   }
   
+  Future<void> fetchMahasiswaPerwalian() async {
+    final url = 'http://localhost:8080/dosen/${userData['identifier']}/20241';
+    try {
+      loggerDashboard.info("Fetching Data Status URL: $url");
+      final response = await http.get(Uri.parse(url));
+      if(response.statusCode == 200){
+        final data = json.decode(response.body);
+        setState(() {
+          for(var row in data){
+            mahasiswaList.add(row['status']);
+          }
+        });
+        loggerDashboard.info(mahasiswaList);
+      }
+      else{
+        loggerDashboard.severe("Failed to fetch. Status Code: ${response.statusCode}");
+      }
+    } catch (e) {
+      loggerDashboard.severe('Error fetching data: $e');
+    }
+  
+  }
+
   Future<void> fetchDataMahasiswa() async {
    final nim = widget.userData['identifier'];
     final semester = widget.userData['semester'];
@@ -73,12 +100,6 @@ class DashboardState extends State<Dashboard> {
         return _dashboardMahasiswa(context);
       case "Dosen":
         return _dashboardDosen(context);
-      case "Dekan":
-        return _dashboardDekan(context);
-      case "Kaprodi":
-        return _dashboardKaprodi(context);
-      case "Bagian Akademik":
-        return _dashboardBaka(context);
       default:
         loggerDashboard.warning("Role hasn't been set");
         return Column(
@@ -197,104 +218,165 @@ class DashboardState extends State<Dashboard> {
     );
   }
 
-  Widget _dashboardDekan(BuildContext context){
-    // return Row(
-    //   children: [
-    //     Flexible(
-    //       flex: 2,
-    //       fit: FlexFit.tight,
-    //       child: Container(
-    //         color: Colors.black,
-    //         child: Text("Test"),
-    //       ),
-    //     ),
-    //     Flexible(
-    //       flex: 2,
-    //       fit: FlexFit.tight,
-    //       child: Expanded(
-    //         child:Row(
-    //           children: [
-    //             Container(
-    //               margin: const EdgeInsets.all(4.0),
-    //               padding: const EdgeInsets.all(4.0),
-    //               decoration: const BoxDecoration(
-    //                 borderRadius: BorderRadius.all(Radius.circular(10)),
-    //                 color: Color(0xFF00549C)
-    //               ),
-    //               child: GestureDetector(
-    //                 onTap: () => Navigator.pushNamed(context, '/dekan/ruang/', arguments: userData),
-    //                 child: Column(
-    //                   children: [
-    //                     Icon(Icons.room, color: Colors.white),
-    //                     const SizedBox(width: 5),
-    //                     Text("Ruangan", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),)
-    //                   ]
-    //                 ),
-    //               ),
-    //             ),
-    //             Container(
-    //               margin: const EdgeInsets.all(4.0),
-    //               padding: const EdgeInsets.all(4.0),
-    //               decoration: const BoxDecoration(
-    //                 borderRadius: BorderRadius.all(Radius.circular(10)),
-    //                 color: Color(0xFF00549C)
-    //               ),
-    //               child: SizedBox(
-    //                 width: 300,
-    //                 height: 300,
-    //                 child: ElevatedButton(
-    //                   onPressed: () => Navigator.pushNamed(context, '/dekan/jadwal/', arguments: userData),
-    //                   child: Column(
-    //                     children: [
-    //                       Icon(Icons.schedule, color: Colors.white),
-    //                       const SizedBox(width: 5),
-    //                       Text("Jadwal", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18),)
-    //                     ]
-    //                   ),
-    //                 ),
-    //               )
-    //             )  
-    //           ],
-    //         )
-    //       ),
-    //     )
-    //   ],
-    // );
-    
-    // return Row(
-    //   children: [
-    //     _buildMenuItem(Icons.schedule, "Jadwal", onTap: () {
-    //       Navigator.pushNamed(context, '/dekan/jadwal/', arguments: userData);
-    //     }),
-    //     _buildMenuItem(Icons.meeting_room, "Ruang", onTap: () {
-    //       Navigator.pushNamed(context, '/dekan/ruang/', arguments: userData);
-    //     }),
-    //   ]
-    // );
-
-    return Container();
+  Widget _dashboardDosen(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 500,  
+          height: 500, 
+          margin: const EdgeInsets.symmetric(horizontal: 64),
+          padding: const EdgeInsets.all(16), 
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Color(0xFF002855),
+                Color(0xFF003B73),
+                Color(0xFF00549C),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(16), // Sudut membulat
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                offset: const Offset(4, 4),
+                blurRadius: 10,
+              ),
+            ],
+          ),
+          child: BarChart(
+            BarChartData(
+              maxY: 50,
+              minY: 0,
+              barGroups: _generateBarGroups(),
+              titlesData: FlTitlesData(
+                leftTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    interval: 5,
+                    reservedSize: 40,
+                    getTitlesWidget: (value, meta) {
+                      return Text(
+                        value.toInt().toString(),
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                bottomTitles: AxisTitles(
+                  sideTitles: SideTitles(
+                    showTitles: true,
+                    reservedSize: 30,
+                    getTitlesWidget: (value, meta) {
+                      const titles = ['Disetujui', 'Pending', 'Belum Diisi'];
+                      return Text(
+                        titles[value.toInt()],
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+              ),
+              gridData: FlGridData(
+                show: true,
+                drawVerticalLine: false,
+                horizontalInterval: 50,
+                getDrawingHorizontalLine: (value) {
+                  return const FlLine(
+                    color: Colors.white24,
+                    strokeWidth: 1,
+                  );
+                },
+              ),
+              borderData: FlBorderData(
+                show: true,
+                border: const Border(
+                  bottom: BorderSide(
+                    color: Colors.white38,
+                    width: 2,
+                  ),
+                  left: BorderSide(
+                    color: Colors.white38,
+                    width: 2,
+                  ),
+                ),
+              ),
+              barTouchData: BarTouchData(
+                touchTooltipData: BarTouchTooltipData(
+                  // tooltipBgColor: Colors.blueGrey.shade900,
+                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                    return BarTooltipItem(
+                      '${rod.toY.toInt()}',
+                      const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
-  Widget _dashboardDosen(BuildContext context){
-    return Container();
-  }
+  List<BarChartGroupData> _generateBarGroups() {
+    final List<String> disetujui = mahasiswaList.where((mahasiswa) {
+      return mahasiswa == 'Disetujui';
+    }).toList();
+    final List<String> belumIsi = mahasiswaList.where((mahasiswa) {
+      return mahasiswa == 'Belum Diisi';
+    }).toList();
+    final List<String> pending= mahasiswaList.where((mahasiswa) {
+      return mahasiswa == 'Pending';
+    }).toList();
 
-  Widget _dashboardKaprodi(BuildContext context){
-    // return Row(
-    //   children: [
-    //     _buildMenuItem(Icons.schedule, "Jadwal", onTap: () {
-    //       Navigator.pushNamed(context, '/kaprodi/jadwal/', arguments: userData);
-    //     }),
-    //     _buildMenuItem(Icons.meeting_room, "Ruang", onTap: () {
-    //       Navigator.pushNamed(context, '/kaprodi/ruang/', arguments: userData);
-    //     }),
-    //   ]
-    // );
-    return Container();
-  }
-
-  Widget _dashboardBaka(BuildContext context){
-    return Container();
+    return [
+      BarChartGroupData(
+        x: 0,
+        barRods: [
+          BarChartRodData(
+            toY: disetujui.length.toDouble(),
+            color: const Color(0xFF4FC3F7),
+            width: 20,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ],
+      ),
+      BarChartGroupData(
+        x: 1,
+        barRods: [
+          BarChartRodData(
+            toY: pending.length.toDouble(),
+            color: const Color(0xFF29B6F6),
+            width: 20,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ],
+      ),
+      BarChartGroupData(
+        x: 2,
+        barRods: [
+          BarChartRodData(
+            toY: belumIsi.length.toDouble(),
+            color: const Color(0xFF29B6F6),
+            width: 20,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ],
+      ),
+    ];
   }
 
   Widget _getProfile(BuildContext context){

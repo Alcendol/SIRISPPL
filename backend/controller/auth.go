@@ -100,7 +100,7 @@ import (
 	"encoding/base64"
 	"log"
 	"net/http"
-
+	"golang.org/x/crypto/bcrypt"
 	"github.com/labstack/echo/v4"
 )
 
@@ -185,11 +185,11 @@ func Register(c echo.Context) error {
 
 	return c.JSON(http.StatusCreated, map[string]string{"message": "User created successfully"})
 }
-
+ 
 func Login(c echo.Context) error {
 	var req LoginRequest
 	if err := c.Bind(&req); err != nil {
-		log.Println("Bind error:", err) // Debugging error pada bind request
+		log.Println("Bind error:", err)
 		return c.JSON(http.StatusBadRequest, map[string]string{"message": "Invalid request"})
 	}
 	log.Printf("Received login request for email: %s", req.Email)
@@ -197,17 +197,21 @@ func Login(c echo.Context) error {
 	// Verifikasi email dan password
 	var passwordHash string
 	connection := db.CreateCon()
-	log.Println("Database connection established")
 	err := connection.QueryRow("SELECT password FROM user WHERE email = ?", req.Email).Scan(&passwordHash)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			log.Println("Email not found:", req.Email)
 			return c.JSON(http.StatusUnauthorized, map[string]string{"message": "Invalid email or password"})
 		}
-		log.Println("Error querying password:", err) // Debugging error saat query password
+		log.Println("Error querying password:", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Internal server error"})
 	}
-	log.Println("Password found for email:", req.Email)
+
+	// Verifikasi password dengan bcrypt
+	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.Password)); err != nil {
+		log.Println("Wrong password for user", req.Email)
+		return c.JSON(http.StatusUnauthorized, map[string]string{"message": "Invalid email or password"})
+	}
 
 	// Mengambil informasi pengguna berdasarkan email
 	var role string
@@ -254,39 +258,6 @@ func Login(c echo.Context) error {
 		}
 		userResponse.Role = "Dosen"
 		log.Println("Dosen data fetched successfully")
-
-	case "Dekan":
-		log.Println("Fetching data for Dekan role...")
-		err = connection.QueryRow("SELECT d.nip, d.nama FROM dosen d JOIN user u ON d.user_id = u.user_id WHERE u.email = ?", req.Email).
-			Scan(&userResponse.Identifier, &userResponse.Name)
-		if err != nil {
-			log.Println("Error fetching Dekan data:", err) // Debugging error saat query dosen
-			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Internal server error"})
-		}
-		userResponse.Role = "Dekan"
-		log.Println("Dekan data fetched successfully")
-
-	case "Bagian Akademik":
-		log.Println(("Fetching data for Bagian Akademik Role"))
-		err = connection.QueryRow("SELECT b.nip, b.nama from bagian_akademik b JOIN user u on b.user_id = u.user_id WHERE u.email = ?", req.Email).
-			Scan(&userResponse.Identifier, &userResponse.Name)
-		if err != nil {
-			log.Println("Error fetching Bagian Akademik data:", err) // Debugging error saat query dosen
-			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Internal server error"})
-		}
-		userResponse.Role = "Bagian Akademik"
-		log.Println("Bagian Akademik data fetched successfully")
-
-	case "Kaprodi":
-		log.Println(("Fetching data for Kaprodi Role"))
-		err = connection.QueryRow("SELECT d.nip, d.nama, d.nama_prodi FROM dosen d JOIN user u ON d.user_id = u.user_id WHERE u.email = ?", req.Email).
-			Scan(&userResponse.Identifier, &userResponse.Name, &userResponse.NamaProdi)
-		if err != nil {
-			log.Println("Error fetching Kaprodi data:", err) // Debugging error saat query dosen
-			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Internal server error"})
-		}
-		userResponse.Role = "Kaprodi"
-		log.Println("Kaprodi data fetched successfully")
 
 	default:
 		log.Println("Invalid role for user:", req.Email) // Debugging jika role tidak ditemukan

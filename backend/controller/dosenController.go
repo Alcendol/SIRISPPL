@@ -39,6 +39,30 @@ func GetMahasiswaPerwalian(c echo.Context) error {
 	return c.JSON(http.StatusOK, daftarMahasiswa)
 }
 
+func GetAllStatusMahasiswaPerwalian(c echo.Context) error {
+	nip := c.Param("nip")
+	idsem := c.Param("idsem")
+
+	// Query ke database
+	connection := db.CreateCon()
+	rows, err := connection.Query("SELECT i.status FROM mahasiswa m JOIN irs i ON m.nim = i.nim WHERE m.nip_wali = ? AND i.idsem = ?", nip, idsem)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Error querying database"})
+	}
+	defer rows.Close()
+
+	var statusList []models.StatusMhs
+	for rows.Next() {
+		var m models.StatusMhs
+		if err := rows.Scan(&m.Status); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Error scanning data"})
+		}
+		statusList = append(statusList, m)
+	}
+	
+	return c.JSON(http.StatusOK, statusList)
+}
+
 func ApproveIRS(c echo.Context) error {
 	log.Println("ApproveIRS called")
 

@@ -36,6 +36,7 @@ func main() {
 	e.POST("/mahasiswa/:nim/approve-irs", controller.ApproveIRS)
 	e.GET("/dosen/:nip/angkatan", controller.GetAngkatanMahasiswaPerwalian)
 	e.POST("/mahasiswa/:nim/unapprove-irs", controller.UnApproveIRS)
+	e.GET("/dosen/:nip/:idsem", controller.GetAllStatusMahasiswaPerwalian)
 
 	// Middleware untuk menangani CORS
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
