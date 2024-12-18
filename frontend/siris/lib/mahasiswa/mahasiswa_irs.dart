@@ -154,7 +154,7 @@ Widget build(BuildContext context) {
                       child: DataTable(
                         dataRowMinHeight: 48.0,
                         columnSpacing: 16.0,
-                        headingRowColor: MaterialStateProperty.resolveWith(
+                        headingRowColor: WidgetStateProperty.resolveWith(
                           (states) => const Color(0xFF162953),
                         ),
                         columns: const [

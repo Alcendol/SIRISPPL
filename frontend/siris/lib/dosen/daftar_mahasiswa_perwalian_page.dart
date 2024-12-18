@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:siris/mahasiswa/detail_irs_mahasiswa.dart';
+import 'package:siris/dosen/detail_irs_mahasiswa.dart';
 import 'package:siris/navbar.dart';
 
 class DaftarMahasiswaPerwalianPage extends StatefulWidget {
@@ -18,9 +18,11 @@ class DaftarMahasiswaPerwalianPageState
     extends State<DaftarMahasiswaPerwalianPage> {
   List<dynamic> mahasiswaList = [];
   List<int> angkatanList = [];
-  int? selectedAngkatan;
+  List<String> statusList = ['Belum Diisi', 'Pending', 'Disetujui', 'Semua'];
+  int selectedAngkatan = 2022;
+  String? selectedStatus;
   bool isLoading = false;
-  Map<String, dynamic> irsInfo = {'status_irs': 'Tidak Ada Data'};
+  Map<String, dynamic> irsInfo = {'status_irs': 'Belum Diisi'};
 
   get userData => widget.userData;
 
@@ -92,7 +94,7 @@ class DaftarMahasiswaPerwalianPageState
         final statusIrs =
             await fetchIRSInfo(mahasiswa['nim'], mahasiswa['semester']);
         mahasiswa['status_irs'] =
-            statusIrs; // Tambahkan status IRS ke setiap mahasiswa
+            statusIrs; 
       }
 
       setState(() {
@@ -138,38 +140,62 @@ class DaftarMahasiswaPerwalianPageState
                     padding: const EdgeInsets.all(16.0),
                     child: Column(
                       children: [
-                        // Dropdown untuk memilih angkatan
-                        DropdownButton<int>(
-                          hint: const Text("Pilih Angkatan"),
-                          value: selectedAngkatan,
-                          onChanged: (int? newValue) {
-                            setState(() {
-                              selectedAngkatan = newValue;
-                            });
-                            fetchMahasiswaPerwalian(); // Mem-fetch data mahasiswa sesuai angkatan
-                          },
-                          items: angkatanList
-                              .map<DropdownMenuItem<int>>((int value) {
-                            return DropdownMenuItem<int>(
-                              value: value,
-                              child: Text('Angkatan $value'),
-                            );
-                          }).toList(),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            // Dropdown untuk memilih angkatan
+                            DropdownButton<int>(
+                              hint: const Text("Pilih Angkatan"),
+                              value: selectedAngkatan,
+                              onChanged: (newValue) {
+                                setState(() {
+                                  selectedAngkatan = newValue as int;
+                                });
+                                fetchMahasiswaPerwalian(); // Mem-fetch data mahasiswa sesuai angkatan
+                              },
+                              items: angkatanList
+                                  .map<DropdownMenuItem<int>>((int value) {
+                                return DropdownMenuItem<int>(
+                                  value: value,
+                                  child: Text('Angkatan $value'),
+                                );
+                              }).toList(),
+                            ),
+                            const SizedBox(width: 16),
+                            DropdownButton<String>(
+                              hint: const Text("Pilih Status"),
+                              value: selectedStatus,
+                              onChanged: (String? newValue) {
+                                setState(() {
+                                  selectedStatus = newValue;
+                                });
+                                fetchMahasiswaPerwalian(); // Mem-fetch data mahasiswa sesuai angkatan
+                              },
+                              items: statusList
+                                  .map<DropdownMenuItem<String>>((String value) {
+                                return DropdownMenuItem<String>(
+                                  value: value,
+                                  child: Text(value),
+                                );
+                              }).toList(),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 8),
                         // Tabel Mahasiswa
                         isLoading
                             ? const CircularProgressIndicator()
                             : MahasiswaTable(
                                 mahasiswaList: mahasiswaList,
-                                selectedAngkatan: selectedAngkatan,
                                 irsInfo: irsInfo,
+                                selectedStatus: selectedStatus,
                                 onDetailPressed: (mahasiswa) {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
                                       builder: (context) => IRSDetailPage(
                                         mahasiswa: mahasiswa,
+                                        userData: userData,
                                       ),
                                     ),
                                   );
@@ -188,20 +214,32 @@ class DaftarMahasiswaPerwalianPageState
 
 class MahasiswaTable extends StatelessWidget {
   final List<dynamic> mahasiswaList;
-  final int? selectedAngkatan;
-  final Map<String, dynamic> irsInfo; // Add this parameter
+  final String? selectedStatus;
+  final Map<String, dynamic> irsInfo; 
   final Function(dynamic mahasiswa) onDetailPressed;
 
   const MahasiswaTable({
     super.key,
     required this.mahasiswaList,
-    this.selectedAngkatan,
-    required this.irsInfo, // Add this
+    required this.irsInfo, 
     required this.onDetailPressed,
+    required this.selectedStatus,
   });
 
   @override
   Widget build(BuildContext context) {
+    final List<dynamic> filteredList;
+    if (selectedStatus != 'Semua'){
+    filteredList = selectedStatus != null && selectedStatus!.isNotEmpty
+      ? mahasiswaList.where((mahasiswa) {
+          return mahasiswa['status_irs'] == selectedStatus;
+        }).toList()
+      : mahasiswaList;
+    }
+    else{
+      filteredList = mahasiswaList;
+    }
+
     return SingleChildScrollView(
       // child: Card(
       //   // shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -236,7 +274,7 @@ class MahasiswaTable extends StatelessWidget {
               ),
             ),
             // Isi tabel
-            ...mahasiswaList.map((mahasiswa) {
+            ...filteredList.map((mahasiswa) {
               return Container(
                 decoration: const BoxDecoration(
                   border: Border(
@@ -256,29 +294,34 @@ class MahasiswaTable extends StatelessWidget {
                             style: _contentTextStyle),
                       ),
                       Expanded(
-                        child: Text(mahasiswa['status_irs'] ?? 'Tidak Ada Data',
+                        child: Text(mahasiswa['status_irs'],
                             style: _contentTextStyle),
                       ),
                       SizedBox(
                         width: 80,
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
+                        child: Row(
+                          children: [
+                            ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 12),
+                              ),
+                              onPressed: () => onDetailPressed(mahasiswa),
+                              child: const Text(
+                                'Detail',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white, // Warna putih
+                                ),
+                              ),
                             ),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
-                          ),
-                          onPressed: () => onDetailPressed(mahasiswa),
-                          child: const Text(
-                            'Detail',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white, // Warna putih
-                            ),
-                          ),
+                            
+                          ],
                         ),
                       ),
                     ],
@@ -293,6 +336,8 @@ class MahasiswaTable extends StatelessWidget {
     );
   }
 }
+
+
 
 const TextStyle _headerTextStyle = TextStyle(
   color: Colors.white,

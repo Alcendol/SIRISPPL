@@ -4,6 +4,7 @@ import (
 	"SIRIS/db"
 	"SIRIS/models"
 	"database/sql"
+	"encoding/base64"
 	"log"
 	"net/http"
 	"strconv"
@@ -19,7 +20,7 @@ func GetMahasiswaPerwalian(c echo.Context) error {
 
 	// Query ke database
 	connection := db.CreateCon()
-	rows, err := connection.Query("SELECT nama, nim, angkatan, semester FROM mahasiswa WHERE nip_wali = ? AND angkatan = ?", nip, angkatan)
+	rows, err := connection.Query("SELECT nama, nim, angkatan, semester, jurusan, gambar FROM mahasiswa WHERE nip_wali = ? AND angkatan = ?", nip, angkatan)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Error querying database"})
 	}
@@ -28,12 +29,13 @@ func GetMahasiswaPerwalian(c echo.Context) error {
 	var daftarMahasiswa []models.Mahasiswa
 	for rows.Next() {
 		var m models.Mahasiswa
-		if err := rows.Scan(&m.Nama, &m.NIM, &m.Angkatan, &m.Semester); err != nil {
+		if err := rows.Scan(&m.Nama, &m.NIM, &m.Angkatan, &m.Semester, &m.Jurusan, &m.ProfileImage); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Error scanning data"})
 		}
+		m.ProfileImageBase64 = base64.StdEncoding.EncodeToString(m.ProfileImage)
 		daftarMahasiswa = append(daftarMahasiswa, m)
 	}
-
+	
 	return c.JSON(http.StatusOK, daftarMahasiswa)
 }
 
